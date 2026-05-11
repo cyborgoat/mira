@@ -1,0 +1,1864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mira | See — See every step. Shape every you.</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@5.20.0/dist/reset.css" />
+
+  <style>
+    /* ===== Mira  ===== */
+    :root {
+      --mira-primary: #1B2A4E;
+      --mira-primary-2: #2C3F6B;
+      --mira-gold: #E8B86D;
+      --mira-gold-2: #F2D29B;
+      --mira-mist: #E7ECF3;
+      --mira-bg: #F5F7FB;
+      --mira-text: #1B2A4E;
+      --mira-text-muted: #6B7A99;
+      --mira-success: #52C41A;
+      --mira-warning: #FAAD14;
+      --mira-danger: #FF4D4F;
+    }
+
+    html, body, #root { height: 100%; margin: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--mira-bg);
+      color: var(--mira-text);
+      overflow-x: hidden;
+    }
+    #root { height: auto; min-height: 100%; }
+
+    /*  */
+    .boot-loading {
+      height: 100vh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: linear-gradient(135deg, #1B2A4E 0%, #2C3F6B 100%);
+      color: #fff;
+    }
+    .boot-logo { font-size: 64px; margin-bottom: 16px; animation: pulse 2s infinite; }
+    .boot-title { font-size: 32px; font-weight: 600; letter-spacing: 4px; margin-bottom: 8px; }
+    .boot-tip { font-size: 14px; opacity: 0.7; letter-spacing: 2px; }
+    @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    /*  */
+    .mira-header {
+      height: 64px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 32px;
+      background: linear-gradient(90deg, #1B2A4E 0%, #2C3F6B 100%);
+      color: #fff; box-shadow: 0 2px 8px rgba(27, 42, 78, 0.15);
+    }
+    .mira-brand { display: flex; align-items: center; gap: 12px; }
+    .mira-brand-logo { font-size: 28px; }
+    .mira-brand-name { font-size: 20px; font-weight: 600; letter-spacing: 2px; }
+    .mira-brand-slogan { font-size: 12px; opacity: 0.65; margin-left: 8px; letter-spacing: 1px; }
+    .mira-header-right { display: flex; align-items: center; gap: 16px; }
+
+    /*  */
+    .perspective-badge {
+      padding: 4px 12px; border-radius: 12px; font-size: 12px;
+      background: rgba(232, 184, 109, 0.2); color: var(--mira-gold-2);
+      border: 1px solid rgba(232, 184, 109, 0.4);
+    }
+    .perspective-badge.team { background: rgba(255, 255, 255, 0.12); color: #fff; border-color: rgba(255, 255, 255, 0.2); }
+
+    /*  */
+    .mira-layout { display: flex; height: calc(100vh - 64px); }
+    .mira-sider {
+      width: 220px; background: #fff; border-right: 1px solid var(--mira-mist);
+      padding: 16px 0; overflow-y: auto;
+    }
+    .mira-sider .ant-menu { border-right: none; }
+    .mira-content {
+      flex: 1; padding: 24px 32px; overflow-y: auto;
+    }
+
+    /*  */
+    .mira-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(27, 42, 78, 0.04); }
+    .mira-card-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+    .mira-card-title::before { content: ""; width: 4px; height: 16px; background: var(--mira-gold); border-radius: 2px; }
+
+    /*  */
+    .dashboard-hero {
+      background: linear-gradient(135deg, #1B2A4E 0%, #2C3F6B 100%);
+      color: #fff; padding: 32px; border-radius: 16px; margin-bottom: 24px;
+      position: relative; overflow: hidden;
+    }
+    .dashboard-hero::after {
+      content: "🪞"; position: absolute; right: 32px; top: 50%; transform: translateY(-50%);
+      font-size: 120px; opacity: 0.08;
+    }
+    .dashboard-hero h1 { font-size: 28px; margin: 0 0 8px; font-weight: 600; }
+    .dashboard-hero p { margin: 0; opacity: 0.8; letter-spacing: 1px; }
+
+    /*  */
+    .achievement-badge {
+      width: 96px; padding: 16px 8px; text-align: center; border-radius: 12px;
+      transition: all 0.3s; cursor: pointer; background: #fff;
+      border: 1px solid var(--mira-mist);
+    }
+    .achievement-badge:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(27, 42, 78, 0.12); }
+    .achievement-badge.unlocked {
+      background: linear-gradient(135deg, #FFF7E6 0%, #FFEFD0 100%);
+      border-color: var(--mira-gold);
+    }
+    .achievement-badge.locked { opacity: 0.4; filter: grayscale(0.6); }
+    .achievement-icon { font-size: 36px; margin-bottom: 6px; }
+    .achievement-name { font-size: 12px; font-weight: 500; color: var(--mira-text); }
+    .achievement-progress { font-size: 11px; color: var(--mira-text-muted); margin-top: 4px; }
+
+    /*  */
+    .todo-item { padding: 10px 12px; border-radius: 8px; transition: background 0.2s; display: flex; align-items: center; gap: 12px; }
+    .todo-item:hover { background: var(--mira-bg); }
+    .todo-item.done .todo-content { text-decoration: line-through; color: var(--mira-text-muted); }
+    .todo-content { flex: 1; }
+    .todo-meta { font-size: 12px; color: var(--mira-text-muted); margin-top: 2px; }
+
+    /*  */
+    .report-section { margin-bottom: 16px; padding: 16px; background: var(--mira-bg); border-radius: 8px; }
+    .report-section-title { font-weight: 600; margin-bottom: 8px; color: var(--mira-primary); }
+    .report-section ul { margin: 0; padding-left: 20px; }
+    .report-section li { line-height: 1.8; }
+
+    /* Healthy */
+    .health-green { color: var(--mira-success); }
+    .health-yellow { color: var(--mira-warning); }
+    .health-red { color: var(--mira-danger); }
+
+    /*  */
+    .chart-box { background: #fff; border-radius: 12px; padding: 16px; }
+
+    /* KPI Healthy */
+    .health-card { padding: 16px; border-radius: 12px; text-align: center; color: #fff; }
+    .health-card.g { background: linear-gradient(135deg, #52C41A 0%, #73D13D 100%); }
+    .health-card.y { background: linear-gradient(135deg, #FAAD14 0%, #FFC53D 100%); }
+    .health-card.r { background: linear-gradient(135deg, #FF4D4F 0%, #FF7875 100%); }
+
+    /*  */
+    .kb-entry {
+      padding: 12px 16px; border-left: 3px solid var(--mira-gold);
+      background: #fff; border-radius: 0 8px 8px 0; margin-bottom: 12px;
+    }
+    .kb-entry-meta { font-size: 12px; color: var(--mira-text-muted); margin-bottom: 6px; }
+
+    /*  */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-thumb { background: rgba(27, 42, 78, 0.15); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(27, 42, 78, 0.3); }
+
+    /*  */
+    .text-muted { color: var(--mira-text-muted); }
+    .text-gold { color: var(--mira-gold); }
+    .text-primary { color: var(--mira-primary); }
+    .mb-16 { margin-bottom: 16px; }
+    .mb-24 { margin-bottom: 24px; }
+    .flex { display: flex; }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
+    .flex-gap-8 { display: flex; gap: 8px; flex-wrap: wrap; }
+    .flex-gap-12 { display: flex; gap: 12px; flex-wrap: wrap; }
+    .flex-gap-16 { display: flex; gap: 16px; flex-wrap: wrap; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div class="boot-loading">
+      <div class="boot-logo">🪞</div>
+      <div class="boot-title">Mira | See</div>
+      <div class="boot-tip">See every step. Shape every you.</div>
+    </div>
+  </div>
+
+  <!--  -->
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/weekOfYear.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/isoWeek.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/plugin/customParseFormat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/locale/zh-cn.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/antd@5.20.0/dist/antd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.6/babel.min.js"></script>
+
+  <!-- ===== Mira （） ===== -->
+  <script type="text/babel" data-presets="env,react" data-type="module">
+  // =====================  =====================
+  const { useState, useEffect, useMemo, useRef, useCallback, createContext, useContext } = React;
+  const {
+    Layout, Menu, Button, Input, Select, Tabs, Card, List, Checkbox, Tag, Avatar,
+    Modal, message, notification, Progress, Tooltip, Empty, Upload, Space, Divider,
+    Statistic, Row, Col, Drawer, Badge, Timeline, Radio, DatePicker, Typography,
+    ConfigProvider, theme: antdTheme, Popconfirm, Segmented, Result
+  } = antd;
+  const { Header, Sider, Content } = Layout;
+  const { Title, Text, Paragraph } = Typography;
+  const { TextArea } = Input;
+  try { dayjs.extend(dayjs_plugin_weekOfYear); } catch (e) {}
+  try { dayjs.extend(dayjs_plugin_isoWeek); } catch (e) {}
+  try { dayjs.extend(dayjs_plugin_customParseFormat); } catch (e) {}
+  try { dayjs.locale('en'); } catch (e) {}
+
+  //  → dayjs （， format）
+  function weekKeyToDate(wk) {
+    const m = String(wk).match(/^(\d{4})-W(\d{1,2})$/);
+    if (!m) return dayjs();
+    return dayjs().year(+m[1]).isoWeek(+m[2]).startOf('isoWeek');
+  }
+
+  // ===================== ：LocalStorage =====================
+  const LS_KEY = 'mira_app_state_v1';
+  const Storage = {
+    load() {
+      try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; }
+      catch (e) { return null; }
+    },
+    save(state) { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {} },
+    reset() { localStorage.removeItem(LS_KEY); location.reload(); }
+  };
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const currentWeekKey = () => dayjs().format('GGGG-[W]WW');
+  const weekKeyOf = (d) => dayjs(d).format('GGGG-[W]WW');
+
+  // ===================== Mock  =====================
+  const SEED_MEMBERS = [
+    { id: 'm1', name: 'Alex', role: 'Frontend Engineer', dept: 'Engineering', avatar: '👨‍💻', isManager: false },
+    { id: 'm2', name: 'Blake', role: 'Team Lead', dept: 'Engineering', avatar: '👨‍💼', isManager: true },
+    { id: 'm3', name: 'Casey', role: 'Backend Engineer', dept: 'Engineering', avatar: '🧑‍💻', isManager: false },
+    { id: 'm4', name: 'Devon', role: 'Product Manager', dept: 'Product', avatar: '👩‍💼', isManager: false },
+    { id: 'm5', name: 'Elliot', role: 'QA Engineer', dept: 'Engineering', avatar: '👩‍🔬', isManager: false },
+    { id: 'm6', name: 'Finley', role: 'UI Designer', dept: 'Product', avatar: '👩‍🎨', isManager: false },
+  ];
+
+  const CATEGORIES = ['Meeting', 'Coding', 'Docs', 'Proposal', 'Design', 'Testing', 'Other'];
+  const KEYWORD_DICT = ['Meeting Notes', 'Requirement Review', 'Code Review', 'Proposal', 'Prototype Design', 'API Integration',
+    'Unit Testing', 'Performance Optimization', 'Architecture Design', 'Client Communication', 'Tech Sharing', 'Interviewing', 'Bug Fix',
+    'Documentation Writing', 'Production Release', 'Data Analysis', 'User Research', 'Competitive Analysis', 'Solution Design'];
+
+  // Report History
+  const SAMPLE_REPORT_TEMPLATES = [
+    { done: ['Completed {kw1} 3 times', 'Advanced {kw2}', 'Helped teammates complete {kw3}'], plan: ['Continue {kw1}', 'Start {kw2}'] },
+    { done: ['Led discussion on {kw1}', '{kw2}Docs', 'Fixed {n} production bugs'], plan: ['Refined {kw1} plan', 'Scheduled {kw2} review'] },
+  ];
+
+  function generateHistoryReports(memberId, weeks = 8) {
+    const reports = [];
+    for (let i = weeks; i >= 1; i--) {
+      const d = dayjs().subtract(i, 'week');
+      const wk = weekKeyOf(d);
+      const tpl = SAMPLE_REPORT_TEMPLATES[i % 2];
+      const pickKw = () => KEYWORD_DICT[Math.floor(Math.random() * KEYWORD_DICT.length)];
+      const fill = (s) => s.replace('{kw1}', pickKw()).replace('{kw2}', pickKw()).replace('{kw3}', pickKw()).replace('{n}', 1 + Math.floor(Math.random() * 5));
+      reports.push({
+        id: uid(), memberId, weekKey: wk,
+        weekRange: `${d.startOf('isoWeek').format('MM/DD')} - ${d.endOf('isoWeek').format('MM/DD')}`,
+        completed: tpl.done.map(fill),
+        inProgress: [`Continuously follow up on ${pickKw()} related items`],
+        nextWeek: tpl.plan.map(fill),
+        risks: i % 3 === 0 ? [`${pickKw()} resource alignment pending confirmation`] : [],
+        createdAt: d.endOf('isoWeek').valueOf(),
+        archived: true,
+      });
+    }
+    return reports;
+  }
+
+  function generateInitialTodos(memberId) {
+    const today = dayjs();
+    const items = [
+      { content: 'Requirement Review', category: 'Meeting', done: true, summary: 'Discussed Q4 flagship features' },
+      { content: 'Code Review', category: 'Coding', done: true, summary: 'Proposed 3 optimization suggestions' },
+      { content: 'Wrote this week's Meeting Notes', category: 'Docs', done: true },
+      { content: 'Advanced first proposal draft', category: 'Proposal', done: false },
+      { content: 'Fixed 2 profile-center bugs', category: 'Coding', done: false },
+    ];
+    return items.map((it, idx) => ({
+      id: uid(), memberId, ...it,
+      priority: idx < 2 ? 'high' : 'normal',
+      createdAt: today.subtract(idx, 'day').valueOf(),
+      finishedAt: it.done ? today.subtract(idx, 'day').add(2, 'hour').valueOf() : null,
+      weekKey: currentWeekKey(),
+    }));
+  }
+
+  const ACHIEVEMENT_RULES = [
+    { id: 'a1', name: 'Meeting Notes', icon: '📝', category: 'Output', kw: 'Meeting Notes', threshold: 5, desc: 'Write >= 5 Meeting Notes' },
+    { id: 'a2', name: 'Proposal', icon: '🏆', category: 'Output', kw: 'Proposal', threshold: 3, desc: 'Participate in >= 3 proposal tasks' },
+    { id: 'a3', name: 'Consistency Star', icon: '🔥', category: 'Consistency', kw: '__weeks__', threshold: 4, desc: 'Submit weekly reports for >= 4 consecutive weeks' },
+    { id: 'a4', name: 'Code Review', icon: '🔍', category: 'Output', kw: 'Code Review', threshold: 3, desc: 'Participate in >= 3 code reviews' },
+    { id: 'a5', name: 'Team Glue', icon: '🤝', category: 'Collaboration', kw: '__mentions__', threshold: 3, desc: 'Mentioned in reports of >= 3 teammates' },
+    { id: 'a6', name: 'Tech Advocate', icon: '🎙️', category: 'Collaboration', kw: 'Tech Sharing', threshold: 2, desc: 'Complete >= 2 tech sharing sessions' },
+    { id: 'a7', name: 'Architect Starter', icon: '🏗️', category: 'Output', kw: 'Architecture Design', threshold: 2, desc: 'Participate in >= 2 architecture designs' },
+    { id: 'a8', name: 'Quality Gatekeeper', icon: '🛡️', category: 'Output', kw: 'Unit Testing', threshold: 3, desc: 'Complete >= 3 unit testing tasks' },
+  ];
+
+  function buildSeed() {
+    const members = SEED_MEMBERS;
+    let reports = [];
+    let todos = [];
+    members.forEach(m => {
+      reports = reports.concat(generateHistoryReports(m.id, 8));
+      if (m.id === 'm1') todos = todos.concat(generateInitialTodos(m.id));
+      else todos = todos.concat(generateInitialTodos(m.id).slice(0, 2));
+    });
+    return {
+      members, todos, reports,
+      currentMemberId: 'm1',
+      perspective: 'self', // 'self' | 'team'
+      route: 'capture', // Submit
+      knowledge: [],
+      tags: {},
+      achievements: {},
+    };
+  }
+
+  // =====================  =====================
+  const QUICK_TEMPLATES = [
+    { key: 'meeting', icon: '🗣️', label: 'Meeting Notes', text: '[{date}] Joined {topic} meeting and captured key decisions, action items, and owners.', category: 'Meeting' },
+    { key: 'review',  icon: '🔍', label: 'Code Review', text: 'Completed code review for {module} and provided {n} improvement suggestions.', category: 'Coding' },
+    { key: 'doc',     icon: '📄', label: 'Documentation Writing', text: 'Wrote "{title}" documentation covering {scope} and submitted it for review.', category: 'Docs' },
+    { key: 'bid',     icon: '🏆', label: 'Proposal', text: 'Advanced proposal for {project}: finished {section} and aligned with {stakeholder}.', category: 'Proposal' },
+    { key: 'design',  icon: '🎨', label: 'Solution Design', text: 'Completed architecture design for {feature} and shared the technical proposal.', category: 'Design' },
+    { key: 'bug',     icon: '🐞', label: 'Bug Fix', text: 'Fixed production bug: {symptom}; root cause: {cause}; verified in release.', category: 'Coding' },
+    { key: 'test',    icon: '🧪', label: 'Testing', text: 'Completed unit/integration tests for {module}; coverage reached {pct}%.', category: 'Testing' },
+    { key: 'share',   icon: '🎙️', label: 'Tech Sharing', text: 'Delivered tech sharing on {topic} with {audience}; feedback was positive.', category: 'Other' },
+  ];
+
+  // ===================== ： =====================
+  function generateReportFromTodos(memberId, weekKey, todos, weekNote = '') {
+    const weekTodos = todos.filter(t => t.memberId === memberId && t.weekKey === weekKey);
+    const completed = weekTodos.filter(t => t.done).map(t => t.summary ? `${t.content} (${t.summary})` : t.content);
+    const inProgress = weekTodos.filter(t => !t.done).map(t => t.content);
+
+    // （/）
+    const noteLines = weekNote.split(/[\n.;;]/).map(s => s.trim()).filter(Boolean);
+    noteLines.forEach(line => {
+      if (/(plan|next week|prepare)/i.test(line)) return;
+      if (!completed.includes(line) && !inProgress.includes(line)) completed.push(line);
+    });
+
+    const nextWeek = noteLines.filter(l => /(plan|next week|prepare)/i.test(l));
+    if (nextWeek.length === 0) nextWeek.push('Continue advancing in-progress tasks', 'Reassess todo priorities for next week');
+
+    const risks = [];
+    if (inProgress.length >= 3) risks.push(`There are many unfinished items (${inProgress.length}); priority review is recommended.`);
+
+    const d = weekKeyToDate(weekKey);
+    return {
+      id: uid(), memberId, weekKey,
+      weekRange: `${d.startOf('isoWeek').format('MM/DD')} - ${d.endOf('isoWeek').format('MM/DD')}`,
+      completed, inProgress, nextWeek, risks,
+      createdAt: Date.now(), archived: false,
+    };
+  }
+
+  // ===================== ： =====================
+  function archiveReportToKB(report) {
+    const entries = [];
+    report.completed.forEach(text => entries.push({ id: uid(), memberId: report.memberId, weekKey: report.weekKey, text, source: 'completed' }));
+    report.inProgress.forEach(text => entries.push({ id: uid(), memberId: report.memberId, weekKey: report.weekKey, text, source: 'inProgress' }));
+    return entries;
+  }
+
+  function searchKB(entries, memberId, query) {
+    if (!query) return entries.filter(e => e.memberId === memberId);
+    const q = query.toLowerCase();
+    return entries.filter(e => e.memberId === memberId && e.text.toLowerCase().includes(q));
+  }
+
+  // ===================== ： Lint =====================
+  function lintTagsForMember(memberId, kbEntries, existingTags = []) {
+    const tagMap = {};
+    existingTags.forEach(t => { tagMap[t.name] = { ...t, count: 0, lastWeek: null }; });
+
+    const memberEntries = kbEntries.filter(e => e.memberId === memberId);
+    KEYWORD_DICT.forEach(kw => {
+      const hits = memberEntries.filter(e => e.text.includes(kw));
+      if (hits.length === 0) return;
+      const lastWeek = hits.map(h => h.weekKey).sort().pop();
+      tagMap[kw] = { name: kw, count: hits.length, lastWeek, sleeping: false };
+    });
+
+    const currentWk = currentWeekKey();
+    Object.values(tagMap).forEach(t => {
+      if (!t.lastWeek) { t.sleeping = true; return; }
+      const weeksAgo = weekKeyToDate(currentWk).diff(weekKeyToDate(t.lastWeek), 'week');
+      if (weeksAgo > 4) t.sleeping = true;
+    });
+
+    return Object.values(tagMap).filter(t => t.count > 0).sort((a, b) => b.count - a.count);
+  }
+
+  // ===================== ： =====================
+  function evaluateAchievements(memberId, kbEntries, reports) {
+    const unlocked = [];
+    const memberEntries = kbEntries.filter(e => e.memberId === memberId);
+    const allText = memberEntries.map(e => e.text).join(' ');
+
+    ACHIEVEMENT_RULES.forEach(rule => {
+      let progress = 0;
+      if (rule.kw === '__weeks__') {
+        const weeks = new Set(reports.filter(r => r.memberId === memberId && r.archived).map(r => r.weekKey));
+        progress = weeks.size;
+      } else if (rule.kw === '__mentions__') {
+        const others = reports.filter(r => r.memberId !== memberId && r.archived);
+        const memberName = (SEED_MEMBERS.find(m => m.id === memberId) || {}).name || '';
+        const mentionedBy = new Set();
+        others.forEach(r => {
+          const text = [...r.completed, ...r.inProgress, ...r.nextWeek].join(' ');
+          if (memberName && text.includes(memberName)) mentionedBy.add(r.memberId);
+        });
+        progress = mentionedBy.size;
+      } else {
+        progress = (allText.match(new RegExp(rule.kw, 'g')) || []).length;
+      }
+      unlocked.push({ ...rule, progress, unlocked: progress >= rule.threshold });
+    });
+    return unlocked;
+  }
+
+  // =====================  Store（ React Context） =====================
+  const StoreContext = createContext(null);
+  const useStore = () => useContext(StoreContext);
+
+  function StoreProvider({ children }) {
+    const [state, setState] = useState(() => {
+      const loaded = Storage.load();
+      if (loaded) {
+        // ： dashboard  capture
+        if (loaded.route === 'dashboard') loaded.route = 'capture';
+        if (!loaded.route) loaded.route = 'capture';
+      }
+      return loaded || buildSeed();
+    });
+
+    // ：Report History
+    useEffect(() => {
+      if (state.knowledge.length === 0 && state.reports.length > 0) {
+        const kb = state.reports.filter(r => r.archived).flatMap(archiveReportToKB);
+        const tags = {};
+        const ach = {};
+        SEED_MEMBERS.forEach(m => {
+          tags[m.id] = lintTagsForMember(m.id, kb);
+          ach[m.id] = evaluateAchievements(m.id, kb, state.reports).filter(a => a.unlocked).map(a => a.id);
+        });
+        setState(s => ({ ...s, knowledge: kb, tags, achievements: ach }));
+      }
+    }, []); // eslint-disable-line
+
+    useEffect(() => { Storage.save(state); }, [state]);
+
+    const actions = useMemo(() => ({
+      setRoute: (route) => setState(s => ({ ...s, route })),
+      switchPerspective: (perspective) => setState(s => ({ ...s, perspective })),
+      switchMember: (currentMemberId) => setState(s => ({ ...s, currentMemberId })),
+      addTodo: (todo) => setState(s => ({ ...s, todos: [...s.todos, { id: uid(), createdAt: Date.now(), weekKey: currentWeekKey(), done: false, ...todo }] })),
+      updateTodo: (id, patch) => setState(s => ({ ...s, todos: s.todos.map(t => t.id === id ? { ...t, ...patch, ...(patch.done && !t.finishedAt ? { finishedAt: Date.now() } : {}) } : t) })),
+      removeTodo: (id) => setState(s => ({ ...s, todos: s.todos.filter(t => t.id !== id) })),
+      saveDraftReport: (report) => setState(s => ({ ...s, reports: [...s.reports.filter(r => !(r.memberId === report.memberId && r.weekKey === report.weekKey && !r.archived)), report] })),
+      archiveReport: (report) => setState(s => {
+        const newReports = [...s.reports.filter(r => r.id !== report.id), { ...report, archived: true }];
+        const newKB = [...s.knowledge, ...archiveReportToKB({ ...report, archived: true })];
+        const newTags = { ...s.tags, [report.memberId]: lintTagsForMember(report.memberId, newKB) };
+        const newAch = { ...s.achievements, [report.memberId]: evaluateAchievements(report.memberId, newKB, newReports).filter(a => a.unlocked).map(a => a.id) };
+        return { ...s, reports: newReports, knowledge: newKB, tags: newTags, achievements: newAch };
+      }),
+      bulkImportReports: (newReports) => setState(s => {
+        const reports = [...s.reports, ...newReports];
+        const kb = [...s.knowledge, ...newReports.flatMap(archiveReportToKB)];
+        const tags = { ...s.tags };
+        const ach = { ...s.achievements };
+        SEED_MEMBERS.forEach(m => {
+          tags[m.id] = lintTagsForMember(m.id, kb);
+          ach[m.id] = evaluateAchievements(m.id, kb, reports).filter(a => a.unlocked).map(a => a.id);
+        });
+        return { ...s, reports, knowledge: kb, tags, achievements: ach };
+      }),
+      resetAll: () => Storage.reset(),
+    }), []);
+
+    return <StoreContext.Provider value={{ state, actions }}>{children}</StoreContext.Provider>;
+  }
+
+  // ===================== （） =====================
+  function MainLayout() {
+    const { state, actions } = useStore();
+    const me = state.members.find(m => m.id === state.currentMemberId);
+    const isTeam = state.perspective === 'team';
+    const [drawerOpen, setDrawerOpen] = useState(false);
+
+    // Personal Modules（）
+    const personalMenu = [
+      { key: 'capture', icon: '🏠', label: 'Workspace' },
+      { key: 'weekly', icon: '📝', label: 'Weekly Assistant' },
+      { key: 'kb', icon: '📚', label: 'My Knowledge Base' },
+      { key: 'achievements', icon: '🏅', label: 'Achievement Panel' },
+      { key: 'performance', icon: '📊', label: 'Performance' },
+    ];
+    // 
+    const teamMenu = [
+      { key: 'team-portrait', icon: '🌐', label: 'Team Portrait' },
+      { key: 'team-summary', icon: '📋', label: 'Team Summary' },
+      { key: 'team-cold-start', icon: '🚀', label: 'Cold-start Import' },
+    ];
+
+    const currentItem = [...personalMenu, ...teamMenu].find(m => m.key === state.route);
+
+    const renderMenuItem = (item) => (
+      <div
+        key={item.key}
+        onClick={() => { actions.setRoute(item.key); setDrawerOpen(false); }}
+        style={{
+          padding: '12px 14px', borderRadius: 8, marginBottom: 4, cursor: 'pointer',
+          background: state.route === item.key ? 'linear-gradient(135deg, #FFF7E6 0%, #FFEFD0 100%)' : 'transparent',
+          border: state.route === item.key ? '1px solid #E8B86D' : '1px solid transparent',
+          color: state.route === item.key ? 'var(--mira-primary)' : 'var(--mira-text)',
+          fontWeight: state.route === item.key ? 600 : 400,
+          transition: 'all 0.15s',
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}
+        onMouseEnter={e => { if (state.route !== item.key) e.currentTarget.style.background = '#F5F7FB'; }}
+        onMouseLeave={e => { if (state.route !== item.key) e.currentTarget.style.background = 'transparent'; }}
+      >
+        <span style={{ fontSize: 18 }}>{item.icon}</span>
+        <span style={{ fontSize: 14 }}>{item.label}</span>
+      </div>
+    );
+
+    return (
+      <div>
+        <div className="mira-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <Button
+              type="text"
+              onClick={() => setDrawerOpen(true)}
+              style={{ color: '#fff', fontSize: 20, padding: '0 8px' }}
+            >☰</Button>
+            <div className="mira-brand">
+              <span className="mira-brand-logo">🪞</span>
+              <span className="mira-brand-name">Mira | See</span>
+              <span className="mira-brand-slogan">See every step. Shape every you.</span>
+            </div>
+          </div>
+
+          <div className="mira-header-right">
+            <Segmented
+              value={state.perspective}
+              onChange={(v) => {
+                actions.switchPerspective(v);
+                actions.setRoute('capture');
+                if (v === 'team') {
+                  const mgr = state.members.find(m => m.isManager);
+                  if (mgr) actions.switchMember(mgr.id);
+                } else {
+                  const member = state.members.find(m => !m.isManager);
+                  if (member) actions.switchMember(member.id);
+                }
+              }}
+              options={[
+                { label: '👤 Team Member', value: 'self' },
+                { label: '👥 Team Manager', value: 'team' },
+              ]}
+            />
+            <Select
+              value={state.currentMemberId}
+              onChange={actions.switchMember}
+              style={{ width: 180 }}
+              size="middle"
+              options={state.members
+                .filter(m => isTeam ? m.isManager : !m.isManager)
+                .map(m => ({ label: `${m.avatar} ${m.name}`, value: m.id }))}
+            />
+            <Tooltip title="Reset all data">
+              <Button size="small" ghost danger onClick={() => Modal.confirm({ title: 'Confirm reset of all Mira data?', onOk: actions.resetAll })}>Reset</Button>
+            </Tooltip>
+          </div>
+        </div>
+
+        {/*  */}
+        <div style={{ padding: '12px 32px 0', display: 'flex', alignItems: 'center', gap: 8, background: 'var(--mira-bg)' }}>
+          <Button size="small" type="text" onClick={() => setDrawerOpen(true)} style={{ color: 'var(--mira-text-muted)' }}>
+            ☰ Menu
+          </Button>
+          {currentItem && (
+            <span style={{ color: 'var(--mira-text-muted)', fontSize: 13 }}>
+              · {currentItem.icon} <strong style={{ color: 'var(--mira-primary)' }}>{currentItem.label}</strong>
+            </span>
+          )}
+        </div>
+
+        <div style={{ padding: '16px 32px 32px', minHeight: 'calc(100vh - 64px - 48px)' }}>
+          <RouteRenderer />
+        </div>
+
+        {/*  */}
+        <Drawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          placement="left"
+          width={320}
+          closable={false}
+          styles={{ body: { padding: 16, background: '#fff' } }}
+        >
+          <div style={{ marginBottom: 20, padding: '12px 8px', borderBottom: '1px solid var(--mira-mist)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <Avatar size={48} style={{ background: isTeam ? '#1B2A4E' : '#E8B86D', fontSize: 24 }}>{me && me.avatar}</Avatar>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 16 }}>{me && me.name}</div>
+                <div style={{ fontSize: 12, color: 'var(--mira-text-muted)' }}>
+                  {me && me.role} · {isTeam ? 'Mira · Team' : 'Mira · Self'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, color: 'var(--mira-text-muted)', padding: '0 8px 8px', letterSpacing: 1 }}>Personal Modules</div>
+          {personalMenu.map(renderMenuItem)}
+
+          {isTeam && (
+            <>
+              <div style={{ fontSize: 12, color: 'var(--mira-text-muted)', padding: '16px 8px 8px', letterSpacing: 1 }}>Team Management</div>
+              {teamMenu.map(renderMenuItem)}
+            </>
+          )}
+
+          <div style={{ marginTop: 24, padding: 12, background: 'var(--mira-bg)', borderRadius: 8, fontSize: 12, color: 'var(--mira-text-muted)', lineHeight: 1.7 }}>
+            🪞 <strong>Every step matters.</strong><br />
+            Every record helps shape a better you.
+          </div>
+        </Drawer>
+      </div>
+    );
+  }
+
+  function RouteRenderer() {
+    const { state } = useStore();
+    const map = {
+      'capture': QuickCapturePage,
+      'weekly': WeeklyAssistantPage,
+      'kb': KnowledgeBasePage,
+      'achievements': AchievementsPage,
+      'performance': PerformancePage,
+      'team-portrait': TeamPortraitPage,
+      'team-summary': TeamSummaryPage,
+      'team-cold-start': ColdStartPage,
+    };
+    const Page = map[state.route] || QuickCapturePage;
+    return <Page />;
+  }
+
+  // ===================== Workspace（ +  todo ） =====================
+  function QuickCapturePage() {
+    return <CapturePage />;
+  }
+
+  function CapturePage() {
+    const { state, actions } = useStore();
+    const memberId = state.currentMemberId;
+    const me = state.members.find(m => m.id === memberId);
+    const [content, setContent] = useState('');
+    const [archivingId, setArchivingId] = useState(null); //  id
+
+    //  + 
+    const corpus = useMemo(() => {
+      const myKB = state.knowledge.filter(e => e.memberId === memberId).map(e => e.text);
+      const phrases = new Set();
+      myKB.forEach(t => {
+        t.split(/[，,.；;:：\s]/).map(s => s.trim())
+          .filter(s => s.length >= 3 && s.length <= 30)
+          .forEach(s => phrases.add(s));
+      });
+      KEYWORD_DICT.forEach(k => phrases.add(k));
+      state.members.filter(m => m.id !== memberId).forEach(m => phrases.add(m.name));
+      return Array.from(phrases);
+    }, [state.knowledge, state.members, memberId]);
+
+    // ：""
+    const suggestion = useMemo(() => {
+      if (!content) return '';
+      // 
+      const tail = content.split(/[，,.；;:：\s]/).pop();
+      if (!tail || tail.length < 1) return '';
+      const hit = corpus.find(p => p !== tail && p.startsWith(tail) && p.length > tail.length);
+      return hit ? hit.slice(tail.length) : '';
+    }, [content, corpus]);
+
+    const submit = () => {
+      const text = content.trim();
+      if (!text) return;
+      actions.addTodo({ memberId, content: text, category: 'Other', priority: 'normal' });
+      setContent('');
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Tab' && suggestion) {
+        e.preventDefault();
+        setContent(content + suggestion);
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        submit();
+      }
+    };
+
+    const myTodos = state.todos
+      .filter(t => t.memberId === memberId && t.weekKey === currentWeekKey())
+      .sort((a, b) => b.createdAt - a.createdAt);
+
+    const toggleDone = (todo) => {
+      if (!todo.done) {
+        //  → 
+        setArchivingId(todo.id);
+        actions.updateTodo(todo.id, { done: true });
+        setTimeout(() => setArchivingId(null), 1400);
+        // （toast）
+        notification.success({
+          message: '🪞 Archived',
+          description: `${todo.content.length > 18 ? todo.content.slice(0, 18) + '…' : todo.content}has been archived to your knowledge base`,
+          placement: 'bottomRight',
+          duration: 2.2,
+        });
+      } else {
+        actions.updateTodo(todo.id, { done: false });
+      }
+    };
+
+    return (
+      <div style={{ maxWidth: 1100, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+
+        {/* ： */}
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 600, marginBottom: 4, color: 'var(--mira-primary)' }}>
+            Hello, {me && me.name} 👋
+          </div>
+          <div style={{ color: 'var(--mira-text-muted)', fontSize: 13, marginBottom: 24 }}>
+            {dayjs().format('MMM D')} · Capture what you did today
+          </div>
+
+          {/*  */}
+          <GhostInput
+            value={content}
+            suggestion={suggestion}
+            onChange={setContent}
+            onKeyDown={handleKeyDown}
+            placeholder="For example: joined product review, discussed Q4 flagship features..."
+          />
+
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--mira-text-muted)' }}>
+            <kbd style={kbdStyle}>Enter</kbd> Submit　<kbd style={kbdStyle}>Tab</kbd> Accept suggestion　<kbd style={kbdStyle}>Shift+Enter</kbd> New line
+          </div>
+        </div>
+
+        {/* ：todo  */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>Submit</div>
+            <div style={{ fontSize: 12, color: 'var(--mira-text-muted)' }}>
+              {myTodos.filter(t => t.done).length} / {myTodos.length} Completed
+            </div>
+          </div>
+
+          {myTodos.length === 0 ? (
+            <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--mira-text-muted)', fontSize: 13, background: '#fff', borderRadius: 12, border: '1px dashed var(--mira-mist)' }}>
+              ✨ Submit<br />
+              <span style={{ fontSize: 12, opacity: 0.7 }}>Capture one item on the left. Every step matters.</span>
+            </div>
+          ) : (
+            <div>
+              {myTodos.map(t => (
+                <TodoRow
+                  key={t.id}
+                  todo={t}
+                  archiving={archivingId === t.id}
+                  onToggle={() => toggleDone(t)}
+                  onDelete={() => actions.removeTodo(t.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const kbdStyle = {
+    display: 'inline-block', padding: '1px 6px', margin: '0 2px',
+    fontFamily: 'monospace', fontSize: 11,
+    background: '#fff', border: '1px solid var(--mira-mist)',
+    borderRadius: 4, color: 'var(--mira-text-muted)',
+  };
+
+  // （contentEditable ： + ）
+  function GhostInput({ value, suggestion, onChange, onKeyDown, placeholder }) {
+    const inputRef = useRef(null);
+
+    return (
+      <div style={{ position: 'relative' }}>
+        {/* ： */}
+        <textarea
+          ref={inputRef}
+          autoFocus
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          rows={1}
+          placeholder={placeholder}
+          style={{
+            width: '100%', resize: 'none',
+            padding: '14px 16px',
+            fontSize: 16, lineHeight: 1.6,
+            border: '1px solid var(--mira-mist)', borderRadius: 12,
+            background: '#fff',
+            color: 'var(--mira-text)',
+            fontFamily: 'inherit',
+            outline: 'none',
+            position: 'relative', zIndex: 2,
+            minHeight: 56,
+          }}
+          onInput={(e) => {
+            // 
+            e.target.style.height = 'auto';
+            e.target.style.height = e.target.scrollHeight + 'px';
+          }}
+          onFocus={e => e.target.style.borderColor = '#E8B86D'}
+          onBlur={e => e.target.style.borderColor = 'var(--mira-mist)'}
+        />
+
+        {/* ：， value ， suggestion */}
+        {suggestion && value && (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              padding: '14px 16px',
+              fontSize: 16, lineHeight: 1.6,
+              fontFamily: 'inherit',
+              pointerEvents: 'none',
+              whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+              color: 'transparent',
+              zIndex: 1,
+            }}
+          >
+            {value}
+            <span style={{ color: '#B8C0D0' }}>{suggestion}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  //  todo ，
+  function TodoRow({ todo, archiving, onToggle, onDelete }) {
+    const [hover, setHover] = useState(false);
+    return (
+      <div
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          display: 'flex', alignItems: 'flex-start', gap: 12,
+          padding: '12px 14px', marginBottom: 8,
+          background: archiving
+            ? 'linear-gradient(90deg, #FFF7E6 0%, #FFEFD0 50%, #FFF7E6 100%)'
+            : todo.done ? '#FAFBFD' : '#fff',
+          borderRadius: 10,
+          border: '1px solid ' + (archiving ? '#E8B86D' : 'var(--mira-mist)'),
+          transition: 'all 0.3s',
+          position: 'relative',
+          boxShadow: archiving ? '0 0 0 4px rgba(232, 184, 109, 0.15)' : 'none',
+        }}
+      >
+        <Checkbox
+          checked={todo.done}
+          onChange={onToggle}
+          style={{ marginTop: 2 }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 14, lineHeight: 1.6,
+            color: todo.done ? 'var(--mira-text-muted)' : 'var(--mira-text)',
+            textDecoration: todo.done ? 'line-through' : 'none',
+            wordBreak: 'break-word',
+          }}>
+            {todo.content}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--mira-text-muted)', marginTop: 4 }}>
+            {dayjs(todo.createdAt).format('MM/DD HH:mm')}
+            {todo.done && (
+              <span style={{ marginLeft: 8, color: 'var(--mira-gold)', fontWeight: 500 }}>
+                🪞 Archived
+              </span>
+            )}
+          </div>
+        </div>
+        {hover && !todo.done && (
+          <Popconfirm title="Delete this item?" onConfirm={onDelete} okText="Delete" cancelText="Cancel">
+            <Button size="small" type="text" style={{ color: 'var(--mira-text-muted)' }}>×</Button>
+          </Popconfirm>
+        )}
+        {archiving && (
+          <div style={{
+            position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+            fontSize: 12, color: 'var(--mira-gold)', fontWeight: 600,
+            animation: 'fadeIn 0.3s',
+          }}>
+            ✨ Archiving...
+          </div>
+        )}
+      </div>
+    );
+  }
+
+
+  // ===================== Weekly Assistant =====================
+  function WeeklyAssistantPage() {
+    const { state, actions } = useStore();
+    const memberId = state.currentMemberId;
+    const wk = currentWeekKey();
+    const myTodos = state.todos.filter(t => t.memberId === memberId && t.weekKey === wk);
+    const [tab, setTab] = useState('todo');
+    const [draft, setDraft] = useState(null);
+    const [weekNote, setWeekNote] = useState('');
+    const [newTodo, setNewTodo] = useState('');
+    const [newCategory, setNewCategory] = useState('Coding');
+
+    const myReports = state.reports.filter(r => r.memberId === memberId).sort((a, b) => b.createdAt - a.createdAt);
+
+    const handleAdd = () => {
+      if (!newTodo.trim()) return;
+      actions.addTodo({ memberId, content: newTodo, category: newCategory, priority: 'normal' });
+      setNewTodo('');
+      message.success('Todo added');
+    };
+
+    const handleGenerate = () => {
+      const r = generateReportFromTodos(memberId, wk, state.todos, weekNote);
+      setDraft(r);
+      setTab('preview');
+      message.success('Weekly report generated. Review and archive.');
+    };
+
+    const handleArchive = () => {
+      if (!draft) return;
+      actions.archiveReport(draft);
+      setDraft(null);
+      setWeekNote('');
+      notification.success({
+        message: '🪞 Archived to personal knowledge base',
+        description: 'Tag schema and achievement progress were updated automatically.',
+      });
+    };
+
+    return (
+      <div>
+        <div className="mira-card mb-16">
+          <div className="flex-between">
+            <div>
+              <Title level={4} style={{ margin: 0 }}>📝 Weekly Assistant</Title>
+              <Text type="secondary">This week: {wk}　·　Completion {myTodos.filter(t => t.done).length} / {myTodos.length}</Text>
+            </div>
+            <Progress
+              type="circle"
+              size={60}
+              percent={myTodos.length ? Math.round(myTodos.filter(t => t.done).length / myTodos.length * 100) : 0}
+              strokeColor="#E8B86D"
+            />
+          </div>
+        </div>
+
+        <Tabs
+          activeKey={tab}
+          onChange={setTab}
+          items={[
+            {
+              key: 'todo', label: '✅ Quick Capture',
+              children: (
+                <div className="mira-card">
+                  <Space.Compact style={{ width: '100%', marginBottom: 16 }}>
+                    <Select value={newCategory} onChange={setNewCategory} options={CATEGORIES.map(c => ({ label: c, value: c }))} style={{ width: 120 }} />
+                    <Input
+                      placeholder="Capture what you did today / …"
+                      value={newTodo}
+                      onChange={e => setNewTodo(e.target.value)}
+                      onPressEnter={handleAdd}
+                    />
+                    <Button type="primary" onClick={handleAdd}>Add</Button>
+                  </Space.Compact>
+
+                  {myTodos.length === 0 ? <Empty description="No records yet this week. Start your first item." /> : (
+                    <List
+                      dataSource={myTodos}
+                      renderItem={t => (
+                        <div className={`todo-item ${t.done ? 'done' : ''}`}>
+                          <Checkbox checked={t.done} onChange={e => actions.updateTodo(t.id, { done: e.target.checked })} />
+                          <div className="todo-content">
+                            <div>{t.content}</div>
+                            <div className="todo-meta">
+                              <Tag color="blue">{t.category}</Tag>
+                              {dayjs(t.createdAt).format('MM/DD HH:mm')}
+                              {t.summary && ` · ${t.summary}`}
+                            </div>
+                          </div>
+                          <Popconfirm title="Delete this item?" onConfirm={() => actions.removeTodo(t.id)}>
+                            <Button size="small" type="text" danger>Delete</Button>
+                          </Popconfirm>
+                        </div>
+                      )}
+                    />
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: 'note', label: '📤 Weekly Note Upload',
+              children: (
+                <div className="mira-card">
+                  <Paragraph type="secondary">
+                    If you did not use Quick Capture much this week, paste your work notes here. Mira will parse and merge them into the weekly report. Supports sentence and newline splitting.
+                  </Paragraph>
+                  <TextArea
+                    rows={10}
+                    placeholder="Example: optimized the login module this week; wrote meeting notes; next week plan to advance proposal drafting."
+                    value={weekNote}
+                    onChange={e => setWeekNote(e.target.value)}
+                  />
+                  <div className="mt-16" style={{ marginTop: 16 }}>
+                    <Upload
+                      beforeUpload={(file) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => { setWeekNote(prev => (prev ? prev + '\n' : '') + String(e.target.result)); message.success(`Loaded ${file.name}`); };
+                        reader.readAsText(file);
+                        return false;
+                      }}
+                      accept=".txt,.md"
+                    >
+                      <Button>📎 Upload .txt / .md file</Button>
+                    </Upload>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'preview', label: '🪄 Generate Weekly Report',
+              children: (
+                <div>
+                  <div className="mira-card mb-16">
+                    <Space>
+                      <Button type="primary" size="large" onClick={handleGenerate}>🪄 Generate this week's report</Button>
+                      {draft && <Button size="large" onClick={handleArchive}>📚 Archive to Knowledge Base</Button>}
+                    </Space>
+                    <div style={{ marginTop: 12 }}>
+                      <Text type="secondary">The system aggregates this week's quick captures and notes into a structured report. After archiving, it writes to your knowledge base and updates tags automatically.</Text>
+                    </div>
+                  </div>
+
+                  {draft ? (
+                    <div className="mira-card">
+                      <Title level={4}>📅 {draft.weekRange}</Title>
+                      <ReportSection title="✅ Completed This Week" items={draft.completed} editable onChange={(v) => setDraft({ ...draft, completed: v })} />
+                      <ReportSection title="🚧 In Progress / Blocked" items={draft.inProgress} editable onChange={(v) => setDraft({ ...draft, inProgress: v })} />
+                      <ReportSection title="📌 Next Week Plan" items={draft.nextWeek} editable onChange={(v) => setDraft({ ...draft, nextWeek: v })} />
+                      <ReportSection title="⚠️ Risks & Help Needed" items={draft.risks} editable onChange={(v) => setDraft({ ...draft, risks: v })} />
+                    </div>
+                  ) : (
+                    <Empty description="Click the button above to generate this week's preview" />
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: 'history', label: '📚 Report History',
+              children: (
+                <div className="mira-card">
+                  {myReports.length === 0 ? <Empty /> : (
+                    <Timeline
+                      items={myReports.slice(0, 10).map(r => ({
+                        color: r.archived ? '#E8B86D' : '#999',
+                        children: (
+                          <div>
+                            <div><strong>{r.weekKey}</strong> · {r.weekRange} {r.archived ? <Tag color="gold"></Tag> : <Tag>Draft</Tag>}</div>
+                            <ul style={{ margin: '6px 0', paddingLeft: 20 }}>
+                              {r.completed.slice(0, 3).map((c, i) => <li key={i}>{c}</li>)}
+                            </ul>
+                          </div>
+                        ),
+                      }))}
+                    />
+                  )}
+                </div>
+              ),
+            },
+          ]}
+        />
+      </div>
+    );
+  }
+
+  function ReportSection({ title, items, editable, onChange }) {
+    const [editing, setEditing] = useState(false);
+    const [text, setText] = useState(items.join('\n'));
+    useEffect(() => setText(items.join('\n')), [items]);
+    return (
+      <div className="report-section">
+        <div className="report-section-title flex-between">
+          <span>{title} ({items.length})</span>
+          {editable && (
+            <Button size="small" type="link" onClick={() => {
+              if (editing) { onChange(text.split('\n').map(s => s.trim()).filter(Boolean)); }
+              setEditing(!editing);
+            }}>{editing ? 'Save' : 'Edit'}</Button>
+          )}
+        </div>
+        {editing ? (
+          <TextArea rows={Math.max(3, items.length + 1)} value={text} onChange={e => setText(e.target.value)} />
+        ) : items.length === 0 ? (
+          <Text type="secondary">(None)</Text>
+        ) : (
+          <ul>{items.map((c, i) => <li key={i}>{c}</li>)}</ul>
+        )}
+      </div>
+    );
+  }
+
+  // =====================  =====================
+  function KnowledgeBasePage() {
+    const { state } = useStore();
+    const memberId = state.currentMemberId;
+    const me = state.members.find(m => m.id === memberId);
+    const [query, setQuery] = useState('');
+    const myEntries = useMemo(() => searchKB(state.knowledge, memberId, query), [state.knowledge, memberId, query]);
+    const myTags = state.tags[memberId] || [];
+
+    // 
+    const profile = useMemo(() => {
+      const allText = state.knowledge.filter(e => e.memberId === memberId).map(e => e.text).join(' ');
+      const top3 = myTags.filter(t => !t.sleeping).slice(0, 3).map(t => t.name);
+      const collaborators = state.members.filter(m => m.id !== memberId && allText.includes(m.name)).slice(0, 3).map(m => m.name);
+      const recentWeeks = [...new Set(state.knowledge.filter(e => e.memberId === memberId).map(e => e.weekKey))].sort().slice(-4);
+      return { top3, collaborators, recentWeeks };
+    }, [state.knowledge, memberId, myTags]);
+
+    return (
+      <div>
+        <div className="mira-card mb-16">
+          <Title level={4} style={{ margin: 0 }}>📚 {me && me.name} 's Knowledge Base · Mira Wiki</Title>
+          <Text type="secondary">This is the storage layer for your work memory. Every archived report accumulates here as the source of tags, achievements, and portraits.</Text>
+        </div>
+
+        <Row gutter={16}>
+          <Col span={8}>
+            <div className="mira-card">
+              <div className="mira-card-title">🪞 Member Profile (AI Summary)</div>
+              <Paragraph>
+                <strong>{me && me.name}</strong>, {me && me.role}. 
+                Recent work focuses on <Text mark>{profile.top3.join(' · ') || 'not yet clear'}</Text>
+                {profile.collaborators.length > 0 && <>. Often collaborates with <Text mark>{profile.collaborators.join(', ')}</Text></>}
+                . Recorded {state.knowledge.filter(e => e.memberId === memberId).length} work snippets across {profile.recentWeeks.length} recent weeks.
+              </Paragraph>
+              <Divider />
+              <div className="mira-card-title" style={{ fontSize: 14 }}>🏷️ Tag Schema (Mira Lens)</div>
+              <div className="flex-gap-8">
+                {myTags.length === 0 ? <Text type="secondary">None yet</Text> : myTags.map(t => (
+                  <Tag key={t.name} color={t.sleeping ? 'default' : 'gold'}>
+                    {t.name} · {t.count}{t.sleeping && ' 💤'}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+          </Col>
+
+          <Col span={16}>
+            <div className="mira-card">
+              <div className="mira-card-title">🔍 Knowledge Search</div>
+              <Input.Search
+                placeholder='Try searching "Meeting Notes" or "Proposal"'
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                style={{ marginBottom: 16 }}
+                allowClear
+              />
+              {myEntries.length === 0 ? <Empty description="None yet" /> : (
+                <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+                  {myEntries.slice(0, 30).map(e => (
+                    <div key={e.id} className="kb-entry">
+                      <div className="kb-entry-meta">
+                        <Tag color={e.source === 'completed' ? 'green' : 'orange'}>{e.source === 'completed' ? 'Completed' : 'In Progress'}</Tag>
+                        {e.weekKey}
+                      </div>
+                      <div>{highlightText(e.text, query)}</div>
+                    </div>
+                  ))}
+                  {myEntries.length > 30 && <Text type="secondary">Showing first 30 entries only. Refine your keywords.</Text>}
+                </div>
+              )}
+            </div>
+          </Col>
+        </Row>
+      </div>
+    );
+  }
+
+  function highlightText(text, q) {
+    if (!q) return text;
+    const idx = text.toLowerCase().indexOf(q.toLowerCase());
+    if (idx < 0) return text;
+    return <>{text.slice(0, idx)}<mark style={{ background: '#FFE7BA' }}>{text.slice(idx, idx + q.length)}</mark>{text.slice(idx + q.length)}</>;
+  }
+
+  // ===================== Achievement Panel =====================
+  function AchievementsPage() {
+    const { state } = useStore();
+    const memberId = state.currentMemberId;
+    const me = state.members.find(m => m.id === memberId);
+    const [detail, setDetail] = useState(null);
+
+    const evaluated = useMemo(() => evaluateAchievements(memberId, state.knowledge, state.reports), [state.knowledge, state.reports, memberId]);
+
+    const groups = ['Output', 'Collaboration', 'Consistency'];
+
+    return (
+      <div>
+        <div className="mira-card mb-16">
+          <Title level={4} style={{ margin: 0 }}>🏅 {me && me.name} Achievement Panel</Title>
+          <Text type="secondary">Unlocked {evaluated.filter(a => a.unlocked).length} / {evaluated.length}. Each record brings a badge closer.</Text>
+        </div>
+
+        {groups.map(group => (
+          <div className="mira-card mb-16" key={group}>
+            <div className="mira-card-title">{group === 'Output' ? '🎯' : group === 'Collaboration' ? '🤝' : '🔥'} {group} achievements</div>
+            <div className="flex-gap-16">
+              {evaluated.filter(a => a.category === group).map(a => (
+                <div
+                  key={a.id}
+                  className={`achievement-badge ${a.unlocked ? 'unlocked' : 'locked'}`}
+                  onClick={() => setDetail(a)}
+                >
+                  <div className="achievement-icon">{a.icon}</div>
+                  <div className="achievement-name">{a.name}</div>
+                  <div className="achievement-progress">
+                    {a.progress} / {a.threshold}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        <Modal
+          open={!!detail}
+          onCancel={() => setDetail(null)}
+          footer={null}
+          title={detail && `${detail.icon} ${detail.name}`}
+        >
+          {detail && (
+            <div>
+              <Paragraph><strong>Unlock condition:</strong> {detail.desc}</Paragraph>
+              <Paragraph><strong>Current progress:</strong>
+                <Progress percent={Math.min(100, Math.round(detail.progress / detail.threshold * 100))} strokeColor="#E8B86D" />
+                {detail.progress} / {detail.threshold}
+              </Paragraph>
+              <Divider />
+              <strong>📚 Trace from knowledge base:</strong>
+              <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 8 }}>
+                {state.knowledge
+                  .filter(e => e.memberId === memberId && (detail.kw.startsWith('__') || e.text.includes(detail.kw)))
+                  .slice(0, 10)
+                  .map(e => <div key={e.id} className="kb-entry">{e.weekKey} · {e.text}</div>)}
+              </div>
+            </div>
+          )}
+        </Modal>
+      </div>
+    );
+  }
+
+  // ===================== Performance =====================
+  function PerformancePage() {
+    const { state } = useStore();
+    const memberId = state.currentMemberId;
+    const me = state.members.find(m => m.id === memberId);
+    const [period, setPeriod] = useState('quarter');
+    const radarRef = useRef(null);
+    const trendRef = useRef(null);
+
+    const myKB = state.knowledge.filter(e => e.memberId === memberId);
+
+    const kpiTargets = {
+      month: { Output: 12, Quality: 90, Collaboration: 6, Innovation: 3 },
+      quarter: { Output: 36, Quality: 90, Collaboration: 18, Innovation: 9 },
+      half: { Output: 72, Quality: 90, Collaboration: 36, Innovation: 18 },
+      year: { Output: 144, Quality: 90, Collaboration: 72, Innovation: 36 },
+    };
+    const target = kpiTargets[period];
+
+    const actual = useMemo(() => {
+      const weeksInPeriod = { month: 4, quarter: 13, half: 26, year: 52 }[period];
+      const cutoff = dayjs().subtract(weeksInPeriod, 'week');
+      const periodKB = myKB.filter(e => {
+        const wkDate = weekKeyToDate(e.weekKey);
+        return wkDate.isAfter(cutoff);
+      });
+      const text = periodKB.map(e => e.text).join(' ');
+      const collabKws = ['meeting', 'collaboration', 'sync', 'review', 'communication'];
+      const innoKws = ['optimization', 'architecture', 'design', 'innovation', 'exploration', 'sharing'];
+      return {
+        Output: periodKB.length,
+        Quality: Math.min(100, 70 + Math.min(20, periodKB.length / 3)),
+        Collaboration: collabKws.reduce((s, k) => s + (text.match(new RegExp(k, 'g')) || []).length, 0),
+        Innovation: innoKws.reduce((s, k) => s + (text.match(new RegExp(k, 'g')) || []).length, 0),
+      };
+    }, [myKB, period]);
+
+    const overall = useMemo(() => {
+      const ratios = ['Output', 'Collaboration', 'Innovation'].map(k => actual[k] / target[k]);
+      const avg = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+      const pct = Math.min(100, Math.round(avg * 100));
+      let level = 'g', tip = 'Healthy', color = '🟢';
+      if (pct < 70) { level = 'r'; tip = 'Off Track'; color = '🔴'; }
+      else if (pct < 90) { level = 'y'; tip = 'Needs Attention'; color = '🟡'; }
+      return { pct, level, tip, color };
+    }, [actual, target]);
+
+    const aiAdvice = useMemo(() => {
+      const gaps = Object.keys(target).map(k => ({ k, ratio: actual[k] / target[k] }));
+      gaps.sort((a, b) => a.ratio - b.ratio);
+      const worst = gaps[0];
+      if (worst.ratio >= 0.9) return 'Great progress. All dimensions are close to target.';
+      const advice = {
+        Output: 'Increase quick-capture frequency so daily work is archived in time.',
+        Quality: 'Add one-line summaries to completed tasks to improve traceability.',
+        Collaboration: 'Record more cross-member meetings, reviews, and communication activities.',
+        Innovation: 'Accumulate keywords such as optimization, architecture, and sharing in tags.',
+      };
+      return `Main gap: ${worst.k} (${Math.round(worst.ratio * 100)}% achieved). ${advice[worst.k]}`;
+    }, [actual, target]);
+
+    useEffect(() => {
+      if (!radarRef.current) return;
+      const chart = echarts.init(radarRef.current);
+      chart.setOption({
+        radar: {
+          indicator: Object.keys(target).map(k => ({ name: k, max: target[k] * 1.2 })),
+          axisName: { color: '#1B2A4E' },
+          splitLine: { lineStyle: { color: 'rgba(27, 42, 78, 0.1)' } },
+        },
+        series: [{
+          type: 'radar',
+          data: [
+            { value: Object.values(target), name: 'Target', lineStyle: { color: '#E8B86D', type: 'dashed' }, areaStyle: { color: 'rgba(232, 184, 109, 0.15)' } },
+            { value: Object.keys(target).map(k => actual[k]), name: 'Actual', lineStyle: { color: '#1B2A4E' }, areaStyle: { color: 'rgba(27, 42, 78, 0.2)' } },
+          ],
+        }],
+        legend: { data: ['Target', 'Actual'], bottom: 0 },
+      });
+      return () => chart.dispose();
+    }, [actual, target]);
+
+    useEffect(() => {
+      if (!trendRef.current) return;
+      const chart = echarts.init(trendRef.current);
+      const last8 = [...new Set(myKB.map(e => e.weekKey))].sort().slice(-8);
+      const data = last8.map(wk => myKB.filter(e => e.weekKey === wk).length);
+      chart.setOption({
+        xAxis: { type: 'category', data: last8.map(w => w.split('-W')[1] + '') },
+        yAxis: { type: 'value' },
+        series: [{ type: 'line', data, smooth: true, areaStyle: { color: 'rgba(232, 184, 109, 0.3)' }, lineStyle: { color: '#E8B86D' }, symbol: 'circle' }],
+        grid: { left: 40, right: 16, top: 16, bottom: 40 },
+      });
+      return () => chart.dispose();
+    }, [myKB]);
+
+    return (
+      <div>
+        <div className="mira-card mb-16 flex-between">
+          <div>
+            <Title level={4} style={{ margin: 0 }}>📊 {me && me.name} Performance</Title>
+            <Text type="secondary">Auto-diagnosed from the knowledge base, no manual reporting</Text>
+          </div>
+          <Segmented
+            value={period}
+            onChange={setPeriod}
+            options={[{ label: 'Monthly', value: 'month' }, { label: 'Quarterly', value: 'quarter' }, { label: 'Semiannual', value: 'half' }, { label: 'Annual', value: 'year' }]}
+          />
+        </div>
+
+        <Row gutter={16} className="mb-16">
+          <Col span={6}>
+            <div className={`health-card ${overall.level}`}>
+              <div style={{ fontSize: 36 }}>{overall.color}</div>
+              <div style={{ fontSize: 24, fontWeight: 600 }}>{overall.tip}</div>
+              <div>achieved {overall.pct}%</div>
+            </div>
+          </Col>
+          {Object.keys(target).map(k => {
+            const ratio = actual[k] / target[k];
+            return (
+              <Col span={4} key={k}>
+                <Card>
+                  <Statistic title={k} value={Math.round(actual[k])} suffix={`/ ${target[k]}`} valueStyle={{ fontSize: 18 }} />
+                  <Progress percent={Math.min(100, Math.round(ratio * 100))} showInfo={false} strokeColor={ratio >= 0.9 ? '#52C41A' : ratio >= 0.7 ? '#FAAD14' : '#FF4D4F'} />
+                </Card>
+              </Col>
+            );
+          })}
+          <Col span={2} />
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={12}>
+            <div className="mira-card">
+              <div className="mira-card-title">🎯 Multi-dimensional Radar</div>
+              <div ref={radarRef} style={{ height: 320 }} />
+            </div>
+          </Col>
+          <Col span={12}>
+            <div className="mira-card">
+              <div className="mira-card-title">📈 Last 8 weeksOutput</div>
+              <div ref={trendRef} style={{ height: 320 }} />
+            </div>
+          </Col>
+        </Row>
+
+        <div className="mira-card" style={{ marginTop: 16, background: 'linear-gradient(135deg, #FFF7E6 0%, #FFEFD0 100%)', border: '1px solid #E8B86D' }}>
+          <div className="mira-card-title">🪞 Mira AI Healthy</div>
+          <Paragraph style={{ marginBottom: 0 }}>{aiAdvice}</Paragraph>
+        </div>
+      </div>
+    );
+  }
+
+  // ===================== Team Portrait =====================
+  function TeamPortraitPage() {
+    const { state } = useStore();
+    const cloudRef = useRef(null);
+    const heatRef = useRef(null);
+    const [focusMember, setFocusMember] = useState(null);
+
+    const allTags = useMemo(() => {
+      const map = {};
+      Object.entries(state.tags).forEach(([mid, tags]) => {
+        tags.forEach(t => {
+          if (!map[t.name]) map[t.name] = { name: t.name, value: 0, members: 0, sleeping: true };
+          map[t.name].value += t.count;
+          map[t.name].members += 1;
+          if (!t.sleeping) map[t.name].sleeping = false;
+        });
+      });
+      return Object.values(map);
+    }, [state.tags]);
+
+    useEffect(() => {
+      if (!cloudRef.current) return;
+      const chart = echarts.init(cloudRef.current);
+      chart.setOption({
+        series: [{
+          type: 'wordCloud',
+          shape: 'circle',
+          sizeRange: [14, 48],
+          rotationRange: [0, 0],
+          gridSize: 12,
+          drawOutOfBound: false,
+          textStyle: {
+            color: () => {
+              const palette = ['#1B2A4E', '#2C3F6B', '#E8B86D', '#C99A55', '#6B7A99'];
+              return palette[Math.floor(Math.random() * palette.length)];
+            },
+          },
+          data: allTags.length > 0 ? allTags : [{ name: 'None yet', value: 1 }],
+        }],
+      });
+      return () => chart.dispose();
+    }, [allTags]);
+
+    useEffect(() => {
+      if (!heatRef.current) return;
+      const chart = echarts.init(heatRef.current);
+      const members = state.members.filter(m => !m.isManager);
+      const topTags = [...allTags].sort((a, b) => b.value - a.value).slice(0, 10).map(t => t.name);
+      const data = [];
+      members.forEach((m, mi) => {
+        topTags.forEach((tn, ti) => {
+          const tag = (state.tags[m.id] || []).find(t => t.name === tn);
+          data.push([ti, mi, tag ? tag.count : 0]);
+        });
+      });
+      chart.setOption({
+        tooltip: { position: 'top' },
+        grid: { left: 80, right: 16, top: 16, bottom: 60 },
+        xAxis: { type: 'category', data: topTags, axisLabel: { rotate: 30 } },
+        yAxis: { type: 'category', data: members.map(m => m.name) },
+        visualMap: { min: 0, max: Math.max(1, ...data.map(d => d[2])), calculable: true, orient: 'horizontal', left: 'center', bottom: 0, inRange: { color: ['#F5F7FB', '#E8B86D', '#1B2A4E'] } },
+        series: [{ type: 'heatmap', data, label: { show: true } }],
+      });
+      return () => chart.dispose();
+    }, [state.tags, allTags, state.members]);
+
+    const newcomers = allTags.filter(t => t.members === 1 && !t.sleeping);
+    const sleeping = allTags.filter(t => t.sleeping);
+
+    return (
+      <div>
+        <div className="mira-card mb-16">
+          <Title level={4} style={{ margin: 0 }}>🌐 Team Portrait · Mira Lens</Title>
+          <Text type="secondary">A team capability map grown from weekly reports. Lint maintains the tag schema in real time.</Text>
+        </div>
+
+        <Row gutter={16} className="mb-16">
+          <Col span={6}><Card><Statistic title="Active Tags" value={allTags.filter(t => !t.sleeping).length} valueStyle={{ color: 'var(--mira-gold)' }} /></Card></Col>
+          <Col span={6}><Card><Statistic title="New Tags" value={newcomers.length} valueStyle={{ color: 'var(--mira-success)' }} /></Card></Col>
+          <Col span={6}><Card><Statistic title="Sleeping Tags" value={sleeping.length} valueStyle={{ color: 'var(--mira-text-muted)' }} /></Card></Col>
+          <Col span={6}><Card><Statistic title="Tag Density" value={(allTags.reduce((s, t) => s + t.value, 0) / Math.max(1, state.members.filter(m => !m.isManager).length)).toFixed(1)} suffix="count/person" /></Card></Col>
+        </Row>
+
+        <Row gutter={16}>
+          <Col span={12}>
+            <div className="mira-card">
+              <div className="mira-card-title">☁️ Team Tag Cloud</div>
+              <div ref={cloudRef} style={{ height: 360 }} />
+            </div>
+          </Col>
+          <Col span={12}>
+            <div className="mira-card">
+              <div className="mira-card-title">🔥 Member × Tag Heatmap</div>
+              <div ref={heatRef} style={{ height: 360 }} />
+            </div>
+          </Col>
+        </Row>
+
+        <div className="mira-card" style={{ marginTop: 16 }}>
+          <div className="mira-card-title">👥 Member Tag Snapshot</div>
+          <List
+            dataSource={state.members.filter(m => !m.isManager)}
+            renderItem={m => {
+              const tags = state.tags[m.id] || [];
+              return (
+                <List.Item actions={[<a onClick={() => setFocusMember(m.id)}>View Evolution</a>]}>
+                  <List.Item.Meta
+                    avatar={<Avatar style={{ background: '#1B2A4E' }}>{m.avatar}</Avatar>}
+                    title={`${m.name} · ${m.role}`}
+                    description={
+                      <div className="flex-gap-8">
+                        {tags.length === 0 ? <Text type="secondary">None yet</Text> :
+                          tags.slice(0, 8).map(t => <Tag key={t.name} color={t.sleeping ? 'default' : 'gold'}>{t.name}·{t.count}{t.sleeping && ' 💤'}</Tag>)}
+                      </div>
+                    }
+                  />
+                </List.Item>
+              );
+            }}
+          />
+        </div>
+
+        <Drawer
+          open={!!focusMember}
+          onClose={() => setFocusMember(null)}
+          width={520}
+          title={focusMember && `📈 ${(state.members.find(m => m.id === focusMember) || {}).name} 's Tag Evolution`}
+        >
+          {focusMember && <TagEvolutionView memberId={focusMember} />}
+        </Drawer>
+      </div>
+    );
+  }
+
+  function TagEvolutionView({ memberId }) {
+    const { state } = useStore();
+    const ref = useRef(null);
+    useEffect(() => {
+      if (!ref.current) return;
+      const chart = echarts.init(ref.current);
+      const weeks = [...new Set(state.knowledge.filter(e => e.memberId === memberId).map(e => e.weekKey))].sort();
+      const tags = (state.tags[memberId] || []).slice(0, 5).map(t => t.name);
+      const series = tags.map(tn => ({
+        name: tn, type: 'line', smooth: true, stack: 'tag',
+        data: weeks.map(wk => state.knowledge.filter(e => e.memberId === memberId && e.weekKey === wk && e.text.includes(tn)).length),
+        areaStyle: {},
+      }));
+      chart.setOption({
+        legend: { top: 0 },
+        xAxis: { type: 'category', data: weeks.map(w => w.split('-W')[1] + '') },
+        yAxis: { type: 'value' },
+        grid: { left: 40, right: 16, top: 40, bottom: 40 },
+        series,
+      });
+      return () => chart.dispose();
+    }, [memberId, state]);
+    return <div ref={ref} style={{ height: 360 }} />;
+  }
+
+  // ===================== Team Summary =====================
+  function TeamSummaryPage() {
+    const { state } = useStore();
+    const [selected, setSelected] = useState(state.members.filter(m => !m.isManager).map(m => m.id));
+    const [weeks, setWeeks] = useState(2);
+    const [summary, setSummary] = useState(null);
+
+    const handleGenerate = () => {
+      const cutoffWk = weekKeyOf(dayjs().subtract(weeks, 'week'));
+      const reports = state.reports.filter(r => selected.includes(r.memberId) && r.archived && r.weekKey >= cutoffWk);
+      const allCompleted = reports.flatMap(r => r.completed);
+      const allRisks = reports.flatMap(r => r.risks);
+      const allPlans = reports.flatMap(r => r.nextWeek);
+      const themes = {};
+      KEYWORD_DICT.forEach(kw => {
+        const hits = allCompleted.filter(c => c.includes(kw));
+        if (hits.length > 0) themes[kw] = hits;
+      });
+      const memberStats = {};
+      reports.forEach(r => { memberStats[r.memberId] = (memberStats[r.memberId] || 0) + r.completed.length; });
+      const stars = Object.entries(memberStats).sort((a, b) => b[1] - a[1]).slice(0, 3)
+        .map(([mid, n]) => ({ name: (state.members.find(m => m.id === mid) || {}).name, count: n }));
+      setSummary({ count: reports.length, themes, allRisks, allPlans, stars, range: `${cutoffWk} ~ ${currentWeekKey()}` });
+      message.success('Team summary generated.');
+    };
+
+    const exportMd = () => {
+      if (!summary) return;
+      const lines = [`# Team Work Summary (${summary.range})`, `\nAggregated ${summary.count} reports\n`, '## Core Progress'];
+      Object.entries(summary.themes).forEach(([k, v]) => {
+        lines.push(`### ${k}`);
+        v.slice(0, 5).forEach(t => lines.push(`- ${t}`));
+      });
+      lines.push('\n## Risks & Help Needed');
+      summary.allRisks.forEach(r => lines.push(`- ${r}`));
+      lines.push('\n## Highlight Members');
+      summary.stars.forEach(s => lines.push(`- ${s.name} (${s.count} output items)`));
+      navigator.clipboard.writeText(lines.join('\n'));
+      message.success('Copied to clipboard');
+    };
+
+    return (
+      <div>
+        <div className="mira-card mb-16">
+          <Title level={4} style={{ margin: 0 }}>📋 Team Summary Assistant</Title>
+          <Text type="secondary">Select members + time range to generate a group-level summary in one click</Text>
+        </div>
+
+        <Row gutter={16}>
+          <Col span={10}>
+            <div className="mira-card">
+              <div className="mira-card-title">⚙️ Configuration</div>
+              <div style={{ marginBottom: 12 }}>
+                <strong>Select members:</strong>
+                <Checkbox.Group value={selected} onChange={setSelected} style={{ display: 'block', marginTop: 8 }}>
+                  <Row gutter={[8, 8]}>
+                    {state.members.filter(m => !m.isManager).map(m => (
+                      <Col span={12} key={m.id}><Checkbox value={m.id}>{m.avatar} {m.name}</Checkbox></Col>
+                    ))}
+                  </Row>
+                </Checkbox.Group>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <strong>Time range:</strong>
+                <Segmented
+                  value={weeks}
+                  onChange={setWeeks}
+                  options={[{ label: 'Last 1 week', value: 1 }, { label: 'Last 2 weeks', value: 2 }, { label: 'Last 4 weeks', value: 4 }, { label: 'Last 8 weeks', value: 8 }]}
+                  style={{ display: 'block', marginTop: 8 }}
+                />
+              </div>
+              <Button type="primary" block size="large" onClick={handleGenerate}>🪄 Generate Team Summary</Button>
+              {summary && <Button block style={{ marginTop: 8 }} onClick={exportMd}>📋 Copy as Markdown</Button>}
+            </div>
+          </Col>
+
+          <Col span={14}>
+            <div className="mira-card">
+              <div className="mira-card-title">📜 Summary Output</div>
+              {!summary ? <Empty description="Summary not generated yet" /> : (
+                <div>
+                  <Paragraph>
+                    <Tag color="gold">Range:{summary.range}</Tag>
+                    <Tag>Aggregated reports: {summary.count}</Tag>
+                  </Paragraph>
+
+                  <div className="report-section">
+                    <div className="report-section-title">🎯 Core Progress (by theme)</div>
+                    {Object.keys(summary.themes).length === 0 ? <Text type="secondary">None yet</Text> :
+                      Object.entries(summary.themes).slice(0, 6).map(([k, v]) => (
+                        <div key={k} style={{ marginBottom: 8 }}>
+                          <Tag color="blue">{k} ({v.length})</Tag>
+                          <ul>{v.slice(0, 3).map((t, i) => <li key={i}>{t}</li>)}</ul>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="report-section">
+                    <div className="report-section-title">⚠️ Risks & Help Needed</div>
+                    {summary.allRisks.length === 0 ? <Text type="secondary">No significant risks this period 👍</Text> : (
+                      <ul>{summary.allRisks.slice(0, 6).map((r, i) => <li key={i}>{r}</li>)}</ul>
+                    )}
+                  </div>
+
+                  <div className="report-section">
+                    <div className="report-section-title">🌟 Highlight Members</div>
+                    <Space>
+                      {summary.stars.map((s, i) => (
+                        <Card key={i} size="small" style={{ background: i === 0 ? 'linear-gradient(135deg, #FFF7E6 0%, #FFEFD0 100%)' : '#fff' }}>
+                          <div style={{ fontSize: 18 }}>{['🥇', '🥈', '🥉'][i]}</div>
+                          <strong>{s.name}</strong>
+                          <div className="text-muted">{s.count} output items</div>
+                        </Card>
+                      ))}
+                    </Space>
+                  </div>
+
+                  <div className="report-section" style={{ background: 'linear-gradient(135deg, #FFF7E6 0%, #FFEFD0 100%)' }}>
+                    <div className="report-section-title">🪞 Recommendations for Managers</div>
+                    <Paragraph style={{ margin: 0 }}>
+                      Recent team focus centers on <Text mark>{Object.keys(summary.themes).slice(0, 3).join(' / ') || 'multi-track delivery'}</Text>. 
+                      In weekly sync, prioritize updates on <Text mark>{Object.keys(summary.themes)[0] || 'the current main track'}</Text>. 
+                      Review whether practices from highlight members <Text mark>{summary.stars.map(s => s.name).join(', ')}</Text> can be replicated.
+                      {summary.allRisks.length > 0 && 'Also monitor shared risks and coordinate resources early.'}
+                    </Paragraph>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Col>
+        </Row>
+      </div>
+    );
+  }
+
+  // =====================  =====================
+  function ColdStartPage() {
+    const { state, actions } = useStore();
+    const [pending, setPending] = useState([]);
+
+    const parseFile = (file) => new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = String(e.target.result);
+        const memberHit = state.members.find(m => file.name.includes(m.name)) || state.members.find(m => !m.isManager);
+        const weekMatch = file.name.match(/(\d{4})[-_W](\d{1,2})/);
+        const weekKey = weekMatch ? `${weekMatch[1]}-W${String(weekMatch[2]).padStart(2, '0')}` : weekKeyOf(dayjs().subtract(Math.floor(Math.random() * 4) + 1, 'week'));
+        const lines = text.split(/[\n.;;]/).map(s => s.trim()).filter(Boolean);
+        const completed = lines.filter(l => !/(plan|next week|prepare|TODO)/i.test(l));
+        const nextWeek = lines.filter(l => /(plan|next week|prepare|TODO)/i.test(l));
+        resolve({
+          id: uid(), memberId: memberHit.id, weekKey,
+          weekRange: weekKey, completed, inProgress: [], nextWeek, risks: [],
+          createdAt: Date.now(), archived: true, _fileName: file.name,
+        });
+      };
+      reader.readAsText(file);
+    });
+
+    const handleUpload = async (file) => {
+      const r = await parseFile(file);
+      setPending(prev => [...prev, r]);
+      return false;
+    };
+
+    const handleImport = () => {
+      if (pending.length === 0) return;
+      const cleaned = pending.map(({ _fileName, ...r }) => r);
+      actions.bulkImportReports(cleaned);
+      notification.success({
+        message: `🚀 Cold start completed: imported ${pending.length} historical reports`,
+        description: 'Mira has built the knowledge base, tag schema, and achievements. Open Team Portrait to review results.',
+      });
+      setPending([]);
+    };
+
+    const generateMockBatch = () => {
+      const all = [];
+      state.members.filter(m => !m.isManager).forEach(m => {
+        all.push(...generateHistoryReports(m.id, 4));
+      });
+      setPending(prev => [...prev, ...all.map(r => ({ ...r, _fileName: `mock_${r.memberId}_${r.weekKey}.txt` }))]);
+      message.success(`Generated ${all.length} mock reports. Confirm to import`);
+    };
+
+    return (
+      <div>
+        <div className="mira-card mb-16">
+          <Title level={4} style={{ margin: 0 }}>🚀 Team Portrait Cold Start</Title>
+          <Text type="secondary">Batch upload historical reports (.txt / .md). The system parses, ingests, extracts keywords, and initializes member tag schema.</Text>
+        </div>
+
+        <Row gutter={16}>
+          <Col span={10}>
+            <div className="mira-card">
+              <div className="mira-card-title">📥 Upload / Parse</div>
+              <Upload.Dragger
+                multiple
+                beforeUpload={handleUpload}
+                accept=".txt,.md"
+                showUploadList={false}
+              >
+                <p style={{ fontSize: 48, margin: 0 }}>📁</p>
+                <p>Click or drag multiple report files here</p>
+                <p className="text-muted">Filename should include member name (e.g. Alex-2024W12.txt)</p>
+              </Upload.Dragger>
+              <Divider></Divider>
+              <Button block onClick={generateMockBatch}>🎲 Generate Mock Reports (for demo)</Button>
+            </div>
+          </Col>
+
+          <Col span={14}>
+            <div className="mira-card">
+              <div className="flex-between mb-16">
+                <div className="mira-card-title">📦 Import Queue ({pending.length})</div>
+                <Space>
+                  <Button onClick={() => setPending([])} disabled={pending.length === 0}>Clear</Button>
+                  <Button type="primary" onClick={handleImport} disabled={pending.length === 0}>Confirm Import and Trigger Lint</Button>
+                </Space>
+              </div>
+              {pending.length === 0 ? <Empty description="No files queued for import" /> : (
+                <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+                  {pending.map(p => {
+                    const m = state.members.find(mm => mm.id === p.memberId);
+                    return (
+                      <div key={p.id} className="kb-entry">
+                        <div className="kb-entry-meta flex-between">
+                          <div>
+                            <Tag color="blue">{m && m.name}</Tag>
+                            <Tag>{p.weekKey}</Tag>
+                            <Tag color="gold">{p.completed.length} </Tag>
+                          </div>
+                          <Text type="secondary" style={{ fontSize: 12 }}>{p._fileName}</Text>
+                        </div>
+                        <div>{p.completed.slice(0, 2).join('；')}{p.completed.length > 2 ? '…' : ''}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Col>
+        </Row>
+      </div>
+    );
+  }
+
+  // =====================  =====================
+  function App() {
+    return (
+      <ConfigProvider
+        theme={{
+          token: {
+            colorPrimary: '#1B2A4E',
+            colorLink: '#E8B86D',
+            borderRadius: 8,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif',
+          },
+        }}
+      >
+        <StoreProvider>
+          <MainLayout />
+        </StoreProvider>
+      </ConfigProvider>
+    );
+  }
+
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<App />);
+  </script>
+</body>
+</html>
