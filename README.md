@@ -10,6 +10,21 @@
 
 ---
 
+## Quickstart
+
+To run the current local scaffold, see [quickstart.md](quickstart.md).
+
+```bash
+pip install -e "apps/api[dev]"
+npm --prefix apps/web install
+npm run dev:api
+npm run dev:web
+```
+
+The API runs on `http://localhost:8000`. The web app usually runs on `http://localhost:5173`.
+
+---
+
 ## About Mira
 
 > We believe that every person who works seriously deserves to be seen.
@@ -249,17 +264,17 @@ Member tag schema (dynamic lint maintenance)
 
 ---
 
-## 6. Technology Stack (Demo Phase)
+## 6. Technology Stack (Current Scaffold)
 
 | Layer | Stack |
 |------|------|
-| Frontend framework | React 18 + Vite + TypeScript |
-| UI components | Ant Design 5.x |
-| Charts | ECharts / Recharts |
-| State management | Zustand |
-| Routing | React Router v6 |
-| Mock data | Mock.js + LocalStorage |
-| LLM capability | Rule/template simulation in demo, reserved OpenAI/local model adapters |
+| Frontend framework | React 19 + Vite + TypeScript |
+| UI components | Local React components + lucide-react icons |
+| Charts | Recharts |
+| Data fetching | TanStack Query |
+| Backend | FastAPI + Pydantic |
+| Storage | SQLite plus Markdown artifacts under `mira-workspace/` |
+| LLM capability | Deterministic generation path, reserved provider adapter |
 
 ---
 
