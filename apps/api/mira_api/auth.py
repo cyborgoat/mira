@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -100,7 +101,7 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
     refresh_token = RefreshToken(
         id=f"rt_{uuid.uuid4().hex[:10]}",
         user_id=user.id,
-        token_hash=hash_password(refresh_token_str),  # Hash for security
+        token_hash=hashlib.sha256(refresh_token_str.encode()).hexdigest(),
         expires_at=(datetime.now(timezone.utc) + timedelta(seconds=settings.jwt_refresh_expiry)).isoformat(timespec="seconds"),
         created_at=now
     )
@@ -159,7 +160,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
     refresh_token = RefreshToken(
         id=f"rt_{uuid.uuid4().hex[:10]}",
         user_id=user.id,
-        token_hash=hash_password(refresh_token_str),
+        token_hash=hashlib.sha256(refresh_token_str.encode()).hexdigest(),
         expires_at=(datetime.now(timezone.utc) + timedelta(seconds=settings.jwt_refresh_expiry)).isoformat(timespec="seconds"),
         created_at=now
     )

@@ -8,6 +8,7 @@ from typing import Literal
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -143,7 +144,7 @@ class TeamSummaryRequest(BaseModel):
 def health(db: Session = Depends(get_db_dependency)) -> dict[str, str]:
     try:
         # Test database connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_status = "ok"
     except Exception:
         db_status = "error"

@@ -2,22 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
+import uuid
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from .config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt"""
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """Verify a password against its hash"""
-    return pwd_context.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def create_access_token(user_id: str, email: str) -> str:
@@ -38,7 +35,8 @@ def create_refresh_token(user_id: str) -> str:
     payload = {
         "sub": user_id,
         "exp": expires,
-        "type": "refresh"
+        "type": "refresh",
+        "jti": uuid.uuid4().hex,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 

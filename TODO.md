@@ -4,13 +4,14 @@
 
 ### Phase 1-4 Migration ✅ COMPLETE (2026-05-13)
 
-- ✅ **Authentication and session handling** - JWT with httpOnly cookies, login/logout/register endpoints
+- ✅ **Authentication and session handling** - JWT with httpOnly cookies, login/logout/register endpoints; runtime-verified 2026-05-13
 - ✅ **Team/workspace isolation** - All API queries filter by workspace_id, context propagation via contextvars
 - ✅ **Alembic migrations** - Migrated from raw SQL to SQLAlchemy ORM with full migration support
 - ✅ **Postgres deployment profile** - Configurable database URL, supports SQLite (local) and PostgreSQL (production)
 - ✅ **Dockerfiles and Docker Compose** - Multi-stage builds for API/web, production docker-compose.yml with health checks
 - ✅ **Audit log infrastructure** - Models and helpers in place (audit.py)
-- ✅ **Test coverage** - 78 tests passing (100%), 65.8% code coverage
+- ✅ **Test coverage** - 78 tests passing (100%), 66.0% code coverage
+- ✅ **Dependency and runtime fixes** - Replaced passlib (unmaintained, breaks with bcrypt≥4) with direct bcrypt; fixed SQLAlchemy 2.0 `text()` requirement; added `pydantic[email]`; added `jti` to refresh tokens to prevent hash collisions
 
 ### Remaining P0 Work
 
