@@ -85,6 +85,7 @@ export type ImportResult = {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    credentials: "include",  // Always send cookies
     ...init,
   });
   if (!response.ok) {

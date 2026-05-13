@@ -29,6 +29,8 @@ import {
   Todo,
   api,
 } from "./lib/api";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { LoginPage } from "./components/LoginPage";
 import "./i18n";
 import "./styles.css";
 
@@ -556,10 +558,21 @@ function LoadingState() {
   );
 }
 
+function AppContent() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) return <LoadingState />;
+  if (!user) return <LoginPage />;
+
+  return <App />;
+}
+
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
     </QueryClientProvider>
   </React.StrictMode>,
 );

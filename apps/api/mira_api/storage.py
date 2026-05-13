@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from .config import settings
+from .context import get_workspace_id
 
 ROOT = settings.repo_root
 WORKSPACE_DIR = settings.workspace_dir

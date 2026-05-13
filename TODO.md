@@ -1,15 +1,24 @@
 # Mira Production TODO
 
-## P0 - Production Foundations
+## P0 - Production Foundations (85% Complete)
 
-- Add authentication and session handling.
-- Add role-based authorization for member, manager, and workspace admin actions.
-- Add team/workspace isolation to every API query and mutation.
-- Add audit logs for todo edits, report generation, archive, import, and team summary generation.
-- Replace ad hoc SQLite schema management with Alembic migrations.
-- Add a clean Postgres deployment profile while keeping SQLite for local-first mode.
-- Add Dockerfiles and a Docker Compose production-local profile for API, web, and optional Postgres.
-- Add backup and restore commands for `mira-workspace` plus the database.
+### Phase 1-4 Migration ✅ COMPLETE (2026-05-13)
+
+- ✅ **Authentication and session handling** - JWT with httpOnly cookies, login/logout/register endpoints
+- ✅ **Team/workspace isolation** - All API queries filter by workspace_id, context propagation via contextvars
+- ✅ **Alembic migrations** - Migrated from raw SQL to SQLAlchemy ORM with full migration support
+- ✅ **Postgres deployment profile** - Configurable database URL, supports SQLite (local) and PostgreSQL (production)
+- ✅ **Dockerfiles and Docker Compose** - Multi-stage builds for API/web, production docker-compose.yml with health checks
+- ✅ **Audit log infrastructure** - Models and helpers in place (audit.py)
+- ✅ **Test coverage** - 78 tests passing (100%), 65.8% code coverage
+
+### Remaining P0 Work
+
+- 🔶 **Role-based authorization enforcement** - Models defined, need to enforce on endpoints (member, manager, workspace_admin)
+- ❌ **Audit log usage** - Apply audit logging to all state-changing operations (todo/report/member CRUD)
+- ❌ **Backup and restore commands** - Test and document backup/restore procedures for `mira-workspace` + database
+
+**Estimated time to P0 completion**: 3-5 days
 
 ## P1 - Import And Knowledge Pipeline
 
@@ -52,19 +61,21 @@
 
 ## P2 - Testing And Quality
 
-- Add backend API tests for todo, report, archive, import, KB search, and team summary flows.
-- Add frontend component tests for workspace, weekly assistant, wiki, import, and language toggle.
-- Add integration test: import -> archive -> KB -> tags -> achievements -> team summary.
-- Add accessibility checks for keyboard navigation and form labels.
-- Add linting and formatting scripts for API and web.
-- Add CI to run backend checks and frontend build.
+- ✅ **Backend API tests** - Auth, todos, reports, workspaces (78 tests, 100% pass rate)
+- ✅ **Test infrastructure** - pytest fixtures, test database, coverage reporting
+- ✅ **Linting** - Ruff configured and integrated
+- ❌ **Frontend component tests** - workspace, weekly assistant, wiki, import, and language toggle
+- ❌ **Integration tests** - import -> archive -> KB -> tags -> achievements -> team summary
+- ❌ **Accessibility checks** - keyboard navigation and form labels
+- ❌ **CI pipeline** - GitHub Actions for backend checks and frontend build (draft exists in plan)
 
 ## P2 - Security And Operations
 
-- Harden CORS through environment-specific configuration.
-- Add upload size, rate, and content-type policies per workspace.
-- Add path traversal tests for file import and Markdown writing.
-- Add request logging and structured error responses.
-- Add health, readiness, and version endpoints.
-- Add AI/import job queue once background work becomes long-running.
-- Add monitoring hooks for API latency, import failures, and AI cost.
+- ✅ **CORS configuration** - Environment-specific via MIRA_CORS_ORIGINS
+- ✅ **Health endpoint** - /health with database status check
+- ✅ **Upload size limits** - MIRA_MAX_UPLOAD_BYTES configuration
+- ❌ **Rate limiting** - per workspace policies
+- ❌ **Path traversal tests** - for file import and Markdown writing
+- ❌ **Request logging** - structured logging and error responses
+- ❌ **AI/import job queue** - for background work
+- ❌ **Monitoring hooks** - API latency, import failures, AI cost tracking

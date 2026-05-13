@@ -1,0 +1,266 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # Backend API tests
+  backend:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: apps/api/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          cd apps/api
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run pytest with coverage
+        run: |
+          cd apps/api
+          pytest --cov=mira_api --cov-report=term --cov-report=xml --cov-report=html -v
+
+      - name: Check coverage threshold
+        run: |
+          cd apps/api
+          coverage report --fail-under=70
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./apps/api/coverage.xml
+          flags: backend
+          name: backend-${{ matrix.python-version }}
+
+      - name: Upload coverage HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.python-version }}
+          path: apps/api/htmlcov/
+
+      - name: Check Alembic migrations
+        run: |
+          cd apps/api
+          alembic check
+
+  # Frontend build and type checking
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd apps/web
+          npm ci
+
+      - name: TypeScript type check
+        run: |
+          cd apps/web
+          npx tsc --noEmit
+
+      - name: Build production bundle
+        run: |
+          cd apps/web
+          npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: apps/web/dist/
+
+  # Docker build test
+  docker:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/api
+          file: ./apps/api/Dockerfile
+          push: false
+          tags: mira-api:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build web image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/web
+          file: ./apps/web/Dockerfile
+          push: false
+          tags: mira-web:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Integration test with PostgreSQL
+  integration:
+    name: Integration Tests (PostgreSQL)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mira_test
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: mira_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: apps/api/pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          cd apps/api
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run migrations on PostgreSQL
+        env:
+          MIRA_DATABASE_URL: postgresql://mira_test:test_password@localhost:5432/mira_test
+        run: |
+          cd apps/api
+          alembic upgrade head
+
+      - name: Run tests against PostgreSQL
+        env:
+          MIRA_DATABASE_URL: postgresql://mira_test:test_password@localhost:5432/mira_test
+          MIRA_JWT_SECRET: test-secret-for-ci
+        run: |
+          cd apps/api
+          pytest -v
+
+      - name: Check database after tests
+        env:
+          PGPASSWORD: test_password
+        run: |
+          psql -h localhost -U mira_test -d mira_test -c "\dt"
+          psql -h localhost -U mira_test -d mira_test -c "SELECT COUNT(*) FROM alembic_version;"
+
+  # Linting and code quality
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff linter
+        run: |
+          cd apps/api
+          ruff check mira_api/ --output-format=github
+
+      - name: Run ruff formatter check
+        run: |
+          cd apps/api
+          ruff format --check mira_api/
+
+  # Security scanning
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+
+  # Summary job (requires all others to pass)
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, docker, integration, lint]
+    if: always()
+
+    steps:
+      - name: Check all jobs
+        run: |
+          if [[ "${{ needs.backend.result }}" == "success" &&
+                "${{ needs.frontend.result }}" == "success" &&
+                "${{ needs.docker.result }}" == "success" &&
+                "${{ needs.integration.result }}" == "success" &&
+                "${{ needs.lint.result }}" == "success" ]]; then
+            echo "✅ All CI checks passed!"
+            exit 0
+          else
+            echo "❌ Some CI checks failed"
+            echo "Backend: ${{ needs.backend.result }}"
+            echo "Frontend: ${{ needs.frontend.result }}"
+            echo "Docker: ${{ needs.docker.result }}"
+            echo "Integration: ${{ needs.integration.result }}"
+            echo "Lint: ${{ needs.lint.result }}"
+            exit 1
+          fi
