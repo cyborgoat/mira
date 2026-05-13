@@ -753,15 +753,62 @@ docker system prune -a
 
 ---
 
+## PostgreSQL Without Docker
+
+For environments where Docker is not available, install PostgreSQL directly.
+
+### macOS (Homebrew)
+
+```bash
+brew install postgresql@16
+brew services start postgresql@16
+```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt update && sudo apt install postgresql-16 postgresql-contrib
+sudo systemctl start postgresql
+```
+
+### Create Database and User
+
+```bash
+psql postgres
+```
+
+```sql
+CREATE USER mira WITH PASSWORD 'your_secure_password_here';
+CREATE DATABASE mira OWNER mira;
+GRANT ALL PRIVILEGES ON DATABASE mira TO mira;
+\q
+```
+
+### Configure and Run Migrations
+
+```bash
+export MIRA_DATABASE_URL="postgresql://mira:your_secure_password_here@localhost:5432/mira"
+cd apps/api
+alembic upgrade head
+```
+
+Start the API as usual:
+
+```bash
+npm run dev:api
+```
+
+---
+
 ## Support and Resources
 
 - **Documentation**: [Project README](./README.md)
-- **PostgreSQL Setup**: [POSTGRESQL_SETUP.md](./POSTGRESQL_SETUP.md)
-- **Implementation Details**: [IMPLEMENTATION_MEMO.md](./IMPLEMENTATION_MEMO.md)
+- **Quickstart (local dev)**: [quickstart.md](./quickstart.md)
+- **Testing Guide**: [TESTING.md](./TESTING.md)
 - **Docker Documentation**: https://docs.docker.com/
 - **Docker Compose Reference**: https://docs.docker.com/compose/compose-file/
 
 ---
 
-**Last Updated**: 2026-05-13
-**Mira Version**: 0.1.0 (Phase 4: Docker & Deployment)
+**Last Updated**: 2026-05-14
+**Mira Version**: 0.1.0
