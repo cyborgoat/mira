@@ -6,7 +6,7 @@ Comprehensive testing strategy and infrastructure for Mira.
 
 ## Overview
 
-Mira has a comprehensive testing infrastructure covering backend API, frontend build verification, Docker builds, and end-to-end integration testing.
+Mira has a comprehensive testing infrastructure covering backend API, frontend build verification, and end-to-end integration testing.
 
 ### Testing Goals
 
@@ -25,8 +25,8 @@ Mira has a comprehensive testing infrastructure covering backend API, frontend b
 
 ```bash
 cd apps/api
-pip install -e ".[dev]"
-pytest --cov=mira_api --cov-report=html
+uv sync --extra dev
+uv run pytest --cov=mira_api --cov-report=html
 open htmlcov/index.html
 ```
 
@@ -38,14 +38,6 @@ npm ci
 npx tsc --noEmit
 npm run build
 ```
-
-### Docker Build Test
-
-```bash
-docker-compose build
-```
-
----
 
 ## Test Infrastructure
 
@@ -66,10 +58,10 @@ docker-compose build
 **Run Tests**:
 ```bash
 cd apps/api
-pytest                    # Run all tests
-pytest -v                 # Verbose output
-pytest -k "auth"          # Run auth tests only
-pytest --cov=mira_api     # With coverage
+uv run pytest                    # Run all tests
+uv run pytest -v                 # Verbose output
+uv run pytest -k "auth"          # Run auth tests only
+uv run pytest --cov=mira_api     # With coverage
 ```
 
 **Detailed Documentation**: See `apps/api/tests/README.md`
@@ -86,22 +78,6 @@ npx tsc --noEmit
 ```bash
 npm run build
 ```
-
-### Docker Tests
-
-**Build Verification**:
-```bash
-# Test API image build
-docker build -f apps/api/Dockerfile apps/api
-
-# Test web image build
-docker build -f apps/web/Dockerfile apps/web
-
-# Test full stack
-docker-compose build
-```
-
----
 
 ## CI/CD Pipeline
 
@@ -120,22 +96,17 @@ docker-compose build
    - Executes: TypeScript type check, production build
    - Uploads: Build artifacts
 
-3. **Docker Build Test**
-   - Builds: API and web Docker images
-   - Validates: Multi-stage builds work
-   - Uses: Build cache for faster builds
-
-4. **Integration Tests (PostgreSQL)**
-   - Database: PostgreSQL 16
+3. **Integration Tests (PostgreSQL)**
+   - Database: PostgreSQL
    - Executes: Full test suite against real database
    - Validates: Database migrations work
 
-5. **Lint**
+4. **Lint**
    - Tool: ruff
    - Checks: Code quality, formatting
    - Standards: PEP 8, import sorting
 
-6. **Security**
+5. **Security**
    - Tool: Trivy
    - Scans: Vulnerabilities in dependencies
    - Fails on: CRITICAL and HIGH severity
@@ -177,10 +148,10 @@ After running tests with coverage:
 open htmlcov/index.html
 
 # Terminal report
-coverage report
+uv run coverage report
 
 # Check threshold
-coverage report --fail-under=70
+uv run coverage report --fail-under=70
 ```
 
 ### Improving Coverage
@@ -189,10 +160,10 @@ To find uncovered code:
 
 ```bash
 # Show missing lines
-pytest --cov=mira_api --cov-report=term-missing
+uv run pytest --cov=mira_api --cov-report=term-missing
 
 # Generate HTML report with line highlighting
-pytest --cov=mira_api --cov-report=html
+uv run pytest --cov=mira_api --cov-report=html
 open htmlcov/index.html
 ```
 
@@ -292,7 +263,7 @@ def test_create_todo_success(self, client, test_member, test_workspace):
 ```bash
 # Backend
 cd apps/api
-pytest --cov=mira_api --cov-report=term --cov-report=html
+uv run pytest --cov=mira_api --cov-report=term --cov-report=html
 
 # Frontend type check
 cd apps/web
@@ -301,47 +272,38 @@ npx tsc --noEmit
 # Frontend build
 npm run build
 
-# Docker
-cd ../..
-docker-compose build
 ```
 
 ### Specific Tests
 
 ```bash
 # Run auth tests only
-pytest tests/test_auth.py
+uv run pytest tests/test_auth.py
 
 # Run specific test class
-pytest tests/test_auth.py::TestUserRegistration
+uv run pytest tests/test_auth.py::TestUserRegistration
 
 # Run specific test function
-pytest tests/test_auth.py::TestUserRegistration::test_register_new_user
+uv run pytest tests/test_auth.py::TestUserRegistration::test_register_new_user
 
 # Run tests matching pattern
-pytest -k "register"
+uv run pytest -k "register"
 ```
 
 ### With PostgreSQL
 
 ```bash
-# Start PostgreSQL
-docker run -d --name mira-test-postgres \
-  -e POSTGRES_USER=test \
-  -e POSTGRES_PASSWORD=test \
-  -e POSTGRES_DB=mira_test \
-  -p 5432:5432 \
-  postgres:16-alpine
+# Create a local PostgreSQL test database.
+createdb mira_test
 
 # Run tests
-export MIRA_DATABASE_URL="postgresql://test:test@localhost:5432/mira_test"
+export MIRA_DATABASE_URL="postgresql:///mira_test"
 cd apps/api
-alembic upgrade head
-pytest
+uv run alembic upgrade head
+uv run pytest
 
 # Cleanup
-docker stop mira-test-postgres
-docker rm mira-test-postgres
+dropdb mira_test
 ```
 
 ---
@@ -354,16 +316,14 @@ docker rm mira-test-postgres
 graph LR
     A[Push Code] --> B[Backend Tests]
     A --> C[Frontend Build]
-    A --> D[Docker Build]
-    A --> E[Integration Tests]
-    A --> F[Lint]
-    A --> G[Security Scan]
+    A --> D[Integration Tests]
+    A --> E[Lint]
+    A --> F[Security Scan]
     B --> H[CI Success]
     C --> H
     D --> H
     E --> H
     F --> H
-    G --> H
 ```
 
 ### CI Configuration
@@ -373,7 +333,7 @@ File: `.github/workflows/ci.yml`
 **Matrix Testing**:
 - Python: 3.11, 3.12
 - Node: 20
-- Database: PostgreSQL 16
+- Database: PostgreSQL
 
 **Artifacts**:
 - Coverage reports (uploaded to Codecov)
@@ -381,9 +341,8 @@ File: `.github/workflows/ci.yml`
 - Frontend build artifacts
 
 **Caching**:
-- pip dependencies
+- uv-managed Python dependencies
 - npm dependencies
-- Docker build layers
 
 ---
 
@@ -395,16 +354,16 @@ File: `.github/workflows/ci.yml`
 cd apps/api
 
 # Check for issues
-ruff check mira_api/
+uv run ruff check mira_api/
 
 # Fix auto-fixable issues
-ruff check --fix mira_api/
+uv run ruff check --fix mira_api/
 
 # Format code
-ruff format mira_api/
+uv run ruff format mira_api/
 
 # Check formatting without changes
-ruff format --check mira_api/
+uv run ruff format --check mira_api/
 ```
 
 ### Ruff Configuration
@@ -477,10 +436,10 @@ ab -n 1000 -c 50 http://localhost:8000/health
 
 ### Tests Fail Locally
 
-1. **Install dependencies**: `pip install -e ".[dev]"`
-2. **Check Python version**: `python --version` (should be 3.11+)
-3. **Clear cache**: `pytest --cache-clear`
-4. **Verbose output**: `pytest -vv`
+1. **Install dependencies**: `uv sync --extra dev`
+2. **Check Python version**: `uv run python --version` (should be 3.11+)
+3. **Clear cache**: `uv run pytest --cache-clear`
+4. **Verbose output**: `uv run pytest -vv`
 
 ### CI Fails But Tests Pass Locally
 
@@ -498,8 +457,8 @@ ab -n 1000 -c 50 http://localhost:8000/health
 
 ### Slow Tests
 
-1. Run in parallel: `pytest -n auto` (requires pytest-xdist)
-2. Profile tests: `pytest --durations=10`
+1. Run in parallel: `uv run pytest -n auto` (requires pytest-xdist)
+2. Profile tests: `uv run pytest --durations=10`
 3. Use markers to skip slow tests during development
 
 ---

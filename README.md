@@ -15,7 +15,7 @@
 To run the current local scaffold, see [quickstart.md](quickstart.md).
 
 ```bash
-pip install -e "apps/api[dev]"
+uv sync --project apps/api --extra dev
 npm --prefix apps/web install
 npm run dev:api
 npm run dev:web

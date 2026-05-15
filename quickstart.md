@@ -5,6 +5,7 @@ This guide gets the local Mira scaffold running with the FastAPI backend and the
 ## Prerequisites
 
 - Python 3.11 or newer
+- uv
 - Node.js 20 or newer
 - npm
 
@@ -13,10 +14,10 @@ This guide gets the local Mira scaffold running with the FastAPI backend and the
 From the repository root:
 
 ```bash
-pip install -e "apps/api[dev]"
+uv sync --project apps/api --extra dev
 ```
 
-If you prefer an isolated environment, create and activate a virtual environment first.
+`uv` creates and manages the backend virtual environment in `apps/api/.venv`.
 
 ## 2. Install Frontend Dependencies
 

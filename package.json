@@ -5,7 +5,7 @@
   "scripts": {
     "dev:web": "npm --prefix apps/web run dev",
     "build:web": "npm --prefix apps/web run build",
-    "dev:api": "uvicorn mira_api.main:app --app-dir apps/api --reload --port 8000",
-    "start:api": "uvicorn mira_api.main:app --app-dir apps/api --port 8000"
+    "dev:api": "uv run --project apps/api uvicorn mira_api.main:app --app-dir apps/api --reload --port 8000",
+    "start:api": "uv run --project apps/api uvicorn mira_api.main:app --app-dir apps/api --port 8000"
   }
 }
