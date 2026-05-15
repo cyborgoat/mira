@@ -5,9 +5,15 @@ This guide gets the local Mira scaffold running with the FastAPI backend and the
 ## Prerequisites
 
 - Python 3.11 or newer
-- uv
 - Node.js 20 or newer
 - npm
+
+Install `uv` if it is not already available:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv --version
+```
 
 ## 1. Install Backend Dependencies
 
@@ -17,7 +23,14 @@ From the repository root:
 uv sync --project apps/api --extra dev
 ```
 
-`uv` creates and manages the backend virtual environment in `apps/api/.venv`.
+This installs the FastAPI backend package from `apps/api/pyproject.toml`, including the `dev` extras used for tests and linting. `uv` creates and manages the backend virtual environment in `apps/api/.venv`.
+
+To confirm the backend environment is ready:
+
+```bash
+uv run --project apps/api python --version
+uv run --project apps/api python -c "import mira_api"
+```
 
 ## 2. Install Frontend Dependencies
 
@@ -30,6 +43,8 @@ npm --prefix apps/web install
 ```bash
 npm run dev:api
 ```
+
+The `dev:api` script runs `uv run --project apps/api ...`, so it uses the backend environment installed above.
 
 The API runs on `http://localhost:8000`.
 

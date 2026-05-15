@@ -14,9 +14,22 @@
 
 To run the current local scaffold, see [quickstart.md](quickstart.md).
 
+Install `uv` if it is not already available:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then install the backend and frontend dependencies from the repository root:
+
 ```bash
 uv sync --project apps/api --extra dev
 npm --prefix apps/web install
+```
+
+Start both services:
+
+```bash
 npm run dev:api
 npm run dev:web
 ```

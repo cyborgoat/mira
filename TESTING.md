@@ -23,6 +23,12 @@ Mira has a comprehensive testing infrastructure covering backend API, frontend b
 
 ### Backend Tests
 
+Install `uv` if it is not already available:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 ```bash
 cd apps/api
 uv sync --extra dev
