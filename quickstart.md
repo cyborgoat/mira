@@ -1,117 +1,62 @@
 # Mira Quickstart
 
-This guide gets the local Mira scaffold running with the FastAPI backend and the Vite React frontend.
+This guide runs the current Mira app: a frontend-only, local-first workspace for tasks, meeting notes, weekly summaries, and achievements.
 
 ## Prerequisites
 
-- Python 3.11 or newer
 - Node.js 20 or newer
 - npm
 
-Install `uv` if it is not already available:
+Python and the FastAPI backend are not required for the current app.
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv --version
-```
-
-## 1. Install Backend Dependencies
+## 1. Install Frontend Dependencies
 
 From the repository root:
-
-```bash
-uv sync --project apps/api --extra dev
-```
-
-This installs the FastAPI backend package from `apps/api/pyproject.toml`, including the `dev` extras used for tests and linting. `uv` creates and manages the backend virtual environment in `apps/api/.venv`.
-
-To confirm the backend environment is ready:
-
-```bash
-uv run --project apps/api python --version
-uv run --project apps/api python -c "import mira_api"
-```
-
-## 2. Install Frontend Dependencies
 
 ```bash
 npm --prefix apps/web install
 ```
 
-## 3. Start the API
-
-```bash
-npm run dev:api
-```
-
-The `dev:api` script runs `uv run --project apps/api ...`, so it uses the backend environment installed above.
-
-The API runs on `http://localhost:8000`.
-
-To verify it is healthy:
-
-```bash
-curl http://localhost:8000/health
-```
-
-## 4. Start the Web App
-
-In another terminal:
+## 2. Start the Web App
 
 ```bash
 npm run dev:web
 ```
 
-Vite prints the local web URL, usually `http://localhost:5173`.
-
-You can jump directly to any sidebar tab with a hash anchor:
+Vite prints the local web URL, usually:
 
 ```text
-http://localhost:5173/#workspace
-http://localhost:5173/#weekly
-http://localhost:5173/#wiki
-http://localhost:5173/#achievements
-http://localhost:5173/#performance
-http://localhost:5173/#portrait
+http://localhost:5173/
+```
+
+If that port is already in use, Vite will print the next available port.
+
+## 3. Open Tabs Directly
+
+```text
+http://localhost:5173/#tasks
+http://localhost:5173/#notes
 http://localhost:5173/#summary
-http://localhost:5173/#import
+http://localhost:5173/#achievements
 ```
 
 ## Runtime Data
 
-The API creates local runtime data in `mira-workspace/`:
+The app stores data in browser `localStorage` using this key:
 
 ```text
-mira-workspace/
-  mira.sqlite3
-  members/<member>/reports/<week>.md
-  team/summaries/<summary-id>.md
+mira-local-workspace-v1
 ```
 
-This directory is intentionally ignored by git.
-
-## Configuration
-
-The backend supports these environment variables:
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MIRA_WORKSPACE_DIR` | `./mira-workspace` | Local runtime database and Markdown output directory |
-| `MIRA_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated allowed frontend origins |
-| `MIRA_MAX_UPLOAD_BYTES` | `2097152` | Maximum upload size for report imports |
-| `MIRA_DEFAULT_LANGUAGE` | `en` | Backend generated fallback text language |
-
-The frontend calls `http://localhost:8000` by default. Override it with:
-
-```bash
-VITE_MIRA_API_URL=http://localhost:8000 npm run dev:web
-```
+Clearing site data in the browser resets the local workspace.
 
 ## Useful Commands
 
 ```bash
-npm run dev:api      # Start FastAPI with reload
-npm run start:api    # Start FastAPI without reload
 npm run dev:web      # Start Vite dev server
 npm run build:web    # Type-check and build the frontend
 ```
+
+## Legacy Backend
+
+The repository still contains the FastAPI backend under `apps/api`, but the current frontend does not call it. Backend setup and tests are only needed if you are working on the API directly.

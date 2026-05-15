@@ -1,129 +1,125 @@
-import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion } from "framer-motion";
 import {
-  Archive,
   BadgeCheck,
-  BookOpen,
-  Brain,
+  CalendarDays,
+  CheckCircle2,
   ClipboardList,
+  Edit3,
   FileText,
-  Flame,
-  Layers,
-  LineChart,
-  Loader2,
+  ListChecks,
+  Plus,
+  Save,
   Search,
-  Send,
-  Sparkles,
-  Users,
+  Trash2,
+  Upload,
 } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { useTranslation } from "react-i18next";
-import { Badge, Button, Card, Checkbox, Input, NativeSelect, Textarea, ToggleGroup } from "./components/ui";
-import {
-  Achievement,
-  KnowledgeEntry,
-  Member,
-  Report,
-  Tag,
-  Todo,
-  api,
-} from "./lib/api";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import { LoginPage } from "./components/LoginPage";
-import "./i18n";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import "./styles.css";
 
-type Route = "workspace" | "weekly" | "wiki" | "achievements" | "performance" | "portrait" | "summary" | "import";
+type Route = "tasks" | "notes" | "summary" | "achievements";
+type TaskStatus = "open" | "complete";
+type Period = "daily" | "weekly" | "monthly";
 
-const nav = [
-  { key: "workspace", labelKey: "nav.workspace", icon: ClipboardList },
-  { key: "weekly", labelKey: "nav.weekly", icon: Sparkles },
-  { key: "wiki", labelKey: "nav.wiki", icon: BookOpen },
-  { key: "achievements", labelKey: "nav.achievements", icon: BadgeCheck },
-  { key: "performance", labelKey: "nav.performance", icon: LineChart },
-  { key: "portrait", labelKey: "nav.portrait", icon: Layers },
-  { key: "summary", labelKey: "nav.summary", icon: Users },
-  { key: "import", labelKey: "nav.import", icon: FileText },
-] as const;
+type Task = {
+  id: string;
+  title: string;
+  details: string;
+  status: TaskStatus;
+  createdAt: string;
+  completedAt?: string;
+};
 
-const queryClient = new QueryClient();
+type MeetingNote = {
+  id: string;
+  title: string;
+  date: string;
+  content: string;
+  updatedAt: string;
+};
 
-const routeSet = new Set<Route>(nav.map((item) => item.key));
+type AppState = {
+  tasks: Task[];
+  notes: MeetingNote[];
+};
 
-function resolveRouteFromHash(): Route {
-  const hash = typeof window === "undefined" ? "" : window.location.hash.replace(/^#\/?/, "");
-  const next = (hash || "workspace").toLowerCase() as Route;
-  return routeSet.has(next) ? next : "workspace";
-}
+const STORAGE_KEY = "mira-local-workspace-v1";
+
+const nav: Array<{ key: Route; label: string; icon: React.ComponentType<{ size?: number }> }> = [
+  { key: "tasks", label: "Tasks", icon: ClipboardList },
+  { key: "notes", label: "Meeting Notes", icon: FileText },
+  { key: "summary", label: "Weekly Summary", icon: CalendarDays },
+  { key: "achievements", label: "Achievements", icon: BadgeCheck },
+];
+
+const seedState: AppState = {
+  tasks: [
+    {
+      id: "task-1",
+      title: "Draft product scope",
+      details: "Capture first-pass requirements and open questions.",
+      status: "complete",
+      createdAt: daysAgo(4),
+      completedAt: daysAgo(3),
+    },
+    {
+      id: "task-2",
+      title: "Review meeting notes",
+      details: "Turn decisions into action items before the next check-in.",
+      status: "open",
+      createdAt: daysAgo(1),
+    },
+  ],
+  notes: [
+    {
+      id: "note-1",
+      title: "Planning sync",
+      date: daysAgo(2),
+      updatedAt: daysAgo(2),
+      content: "## Decisions\n- Keep the first version local-first\n- Prioritize tasks, notes, summaries\n\n## Follow-ups\n- Validate weekly rollup format",
+    },
+  ],
+};
 
 function App() {
-  const { t, i18n } = useTranslation();
   const [route, setRoute] = useState<Route>(resolveRouteFromHash());
-  const [selectedMemberId, setSelectedMemberId] = useState("m1");
-  const { data, isLoading, error } = useQuery({ queryKey: ["state"], queryFn: api.state });
-
-  const selectedMember = data?.members.find((member) => member.id === selectedMemberId) ?? data?.members[0];
-  const pageTitle = t(nav.find((item) => item.key === route)?.labelKey ?? "nav.workspace");
-  const language = i18n.language.startsWith("zh") ? "zh" : "en";
-  const changeLanguage = (nextLanguage: "en" | "zh") => {
-    localStorage.setItem("mira_language", nextLanguage);
-    i18n.changeLanguage(nextLanguage);
-  };
-
-  const navigateTo = (nextRoute: Route) => {
-    if (typeof window !== "undefined") {
-      if (window.location.hash !== `#${nextRoute}`) {
-        window.location.hash = `#${nextRoute}`;
-      }
-    }
-    setRoute(nextRoute);
-  };
+  const [state, setState] = usePersistentState();
+  const [period, setPeriod] = useState<Period>("weekly");
+  const currentNav = nav.find((item) => item.key === route) ?? nav[0];
+  const filtered = useMemo(() => filterByPeriod(state, period), [state, period]);
+  const stats = useMemo(() => buildStats(filtered), [filtered]);
 
   useEffect(() => {
-    const handleHashChange = () => {
-      setRoute(resolveRouteFromHash());
-    };
-    handleHashChange();
+    const handleHashChange = () => setRoute(resolveRouteFromHash());
     window.addEventListener("hashchange", handleHashChange);
-    if (typeof window !== "undefined") {
-      const normalized = `#${resolveRouteFromHash()}`;
-      if (window.location.hash !== normalized) {
-        window.history.replaceState(null, "", normalized);
-      }
-    }
-
-    return () => {
-      window.removeEventListener("hashchange", handleHashChange);
-    };
+    return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
+
+  const navigateTo = (nextRoute: Route) => {
+    window.location.hash = nextRoute;
+    setRoute(nextRoute);
+  };
 
   return (
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">Mira</span>
-          <span className="brand-name">Mira | See</span>
-          <span className="brand-slogan">{t("app.slogan")}</span>
+          <span className="brand-mark">M</span>
+          <div className="brand-stack">
+            <span className="brand-name">Mira</span>
+            <span className="brand-slogan">Local workspace</span>
+          </div>
         </div>
         <div className="row">
-          <ToggleGroup
-            ariaLabel={t("app.language")}
-            value={language}
-            options={[
-              { value: "en", label: "EN" },
-              { value: "zh", label: "ZH" },
-            ]}
-            onValueChange={(value) => changeLanguage(value as "en" | "zh")}
-          />
-          <Badge>{selectedMember ? t(`roles.${selectedMember.role}`) : t("app.loading")}</Badge>
-          <NativeSelect style={{ width: 190 }} value={selectedMemberId} onChange={(event) => setSelectedMemberId(event.target.value)}>
-            {data?.members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.name} · {t(`departments.${member.department}`)}
-              </option>
-            ))}
-          </NativeSelect>
+          <Badge>{state.tasks.length} tasks</Badge>
+          <Badge>{state.notes.length} notes</Badge>
         </div>
       </header>
 
@@ -132,10 +128,17 @@ function App() {
           {nav.map((item) => {
             const Icon = item.icon;
             return (
-              <button className={`nav-button ${route === item.key ? "active" : ""}`} key={item.key} onClick={() => navigateTo(item.key)}>
-                <Icon size={18} />
-                {t(item.labelKey)}
-              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className={`nav-button ${route === item.key ? "active" : ""}`}
+                key={item.key}
+                onClick={() => navigateTo(item.key)}
+              >
+                <Icon size={17} />
+                {item.label}
+              </Button>
             );
           })}
         </div>
@@ -144,470 +147,498 @@ function App() {
       <main className="main">
         <div className="page-header">
           <div>
-            <div className="eyebrow">{t("app.eyebrow")}</div>
-            <h1>{pageTitle}</h1>
-            <p className="muted">{t("app.subtitle")}</p>
+            <div className="eyebrow">Mira workspace</div>
+            <h1>{currentNav.label}</h1>
+            <p className="muted">Tasks, meeting notes, and generated work summaries in one local view.</p>
           </div>
-          <Badge>#{route}</Badge>
+          {(route === "summary" || route === "achievements") && <PeriodControl value={period} onChange={setPeriod} />}
         </div>
 
-        {isLoading && <LoadingState />}
-        {error && <Card>{t("app.apiUnavailable")}</Card>}
-        {data && selectedMember && (
-          <RouteView
-            route={route}
-            selectedMember={selectedMember}
-            members={data.members}
-            todos={data.todos}
-            reports={data.reports}
-            knowledge={data.knowledge}
-            tags={data.tags}
-            achievements={data.achievements}
-          />
-        )}
+        {route === "tasks" && <TasksView tasks={state.tasks} setState={setState} />}
+        {route === "notes" && <NotesView notes={state.notes} setState={setState} />}
+        {route === "summary" && <SummaryView filtered={filtered} stats={stats} period={period} />}
+        {route === "achievements" && <AchievementsView filtered={filtered} stats={stats} period={period} />}
       </main>
     </div>
   );
 }
 
-function RouteView(props: {
-  route: Route;
-  selectedMember: Member;
-  members: Member[];
-  todos: Todo[];
-  reports: Report[];
-  knowledge: KnowledgeEntry[];
-  tags: Tag[];
-  achievements: Achievement[];
-}) {
-  switch (props.route) {
-    case "weekly":
-      return <WeeklyAssistant {...props} />;
-    case "wiki":
-      return <Wiki {...props} />;
-    case "achievements":
-      return <Achievements {...props} />;
-    case "performance":
-      return <Performance {...props} />;
-    case "portrait":
-      return <TeamPortrait {...props} />;
-    case "summary":
-      return <TeamSummary {...props} />;
-    case "import":
-      return <ImportGuide members={props.members} />;
-    default:
-      return <Workspace {...props} />;
-  }
-}
+function TasksView({ tasks, setState }: { tasks: Task[]; setState: React.Dispatch<React.SetStateAction<AppState>> }) {
+  const [draft, setDraft] = useState({ title: "", details: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const editingTask = tasks.find((task) => task.id === editingId);
+  const visibleTasks = tasks.filter((task) => `${task.title} ${task.details}`.toLowerCase().includes(query.toLowerCase()));
 
-function Workspace({ selectedMember, todos }: { selectedMember: Member; todos: Todo[] }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [content, setContent] = useState("");
-  const memberTodos = todos.filter((todo) => todo.member_id === selectedMember.id);
-  const createTodo = useMutation({
-    mutationFn: api.createTodo,
-    onSuccess: () => {
-      setContent("");
-      queryClient.invalidateQueries({ queryKey: ["state"] });
-    },
-  });
-  const updateTodo = useMutation({
-    mutationFn: ({ id, done }: { id: string; done: boolean }) => api.updateTodo(id, { done }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["state"] }),
-  });
+  const saveTask = () => {
+    const title = draft.title.trim();
+    if (!title) return;
+    if (editingId) {
+      setState((current) => ({
+        ...current,
+        tasks: current.tasks.map((task) => (task.id === editingId ? { ...task, title, details: draft.details.trim() } : task)),
+      }));
+      setEditingId(null);
+    } else {
+      setState((current) => ({
+        ...current,
+        tasks: [{ id: createId("task"), title, details: draft.details.trim(), status: "open", createdAt: today() }, ...current.tasks],
+      }));
+    }
+    setDraft({ title: "", details: "" });
+  };
+
+  const startEdit = (task: Task) => {
+    setEditingId(task.id);
+    setDraft({ title: task.title, details: task.details });
+  };
+
+  const toggleTask = (taskId: string, checked: boolean) => {
+    setState((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) =>
+        task.id === taskId
+          ? { ...task, status: checked ? "complete" : "open", completedAt: checked ? today() : undefined }
+          : task,
+      ),
+    }));
+  };
+
+  const deleteTask = (taskId: string) => {
+    setState((current) => ({ ...current, tasks: current.tasks.filter((task) => task.id !== taskId) }));
+    if (editingId === taskId) {
+      setEditingId(null);
+      setDraft({ title: "", details: "" });
+    }
+  };
 
   return (
-    <div className="grid two-col">
-      <Card className="stack">
-        <h2>{t("workspace.captureTitle")}</h2>
+    <div className="grid two-col work-grid">
+      <Card className="stack editor-panel">
+        <div className="row-between">
+          <h2>{editingTask ? "Edit task" : "New task"}</h2>
+          {editingTask && <Badge>{formatDate(editingTask.createdAt)}</Badge>}
+        </div>
+        <Input value={draft.title} placeholder="Task title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
         <Textarea
-          value={content}
-          placeholder={t("workspace.capturePlaceholder")}
-          onChange={(event) => setContent(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              if (content.trim()) createTodo.mutate({ member_id: selectedMember.id, content });
-            }
-          }}
+          className="compact"
+          value={draft.details}
+          placeholder="Details, blockers, links, or acceptance notes"
+          onChange={(event) => setDraft({ ...draft, details: event.target.value })}
         />
         <div className="row-between">
-          <span className="muted">{t("workspace.shortcut")}</span>
-          <Button onClick={() => createTodo.mutate({ member_id: selectedMember.id, content })} disabled={!content.trim()}>
-            <Send size={16} /> {t("workspace.submit")}
+          <Button variant="secondary" type="button" onClick={() => {
+            setEditingId(null);
+            setDraft({ title: "", details: "" });
+          }}>
+            Clear
+          </Button>
+          <Button type="button" disabled={!draft.title.trim()} onClick={saveTask}>
+            {editingTask ? <Save size={16} /> : <Plus size={16} />} {editingTask ? "Save task" : "Add task"}
           </Button>
         </div>
       </Card>
 
       <Card className="stack">
         <div className="row-between">
-          <h2>{t("workspace.recordsTitle")}</h2>
-          <Badge>{t("workspace.doneCount", { count: memberTodos.filter((todo) => todo.done).length })}</Badge>
+          <h2>Task list</h2>
+          <Badge>{tasks.filter((task) => task.status === "complete").length} complete</Badge>
         </div>
-        {memberTodos.map((todo) => (
-          <motion.div layout className={`todo ${todo.done ? "done" : ""}`} key={todo.id}>
-            <div className="row-between">
-              <label className="row">
-                <Checkbox checked={Boolean(todo.done)} onChange={(event) => updateTodo.mutate({ id: todo.id, done: event.target.checked })} />
-                <span className="todo-title">{todo.content}</span>
-              </label>
-              <Badge>{todo.category}</Badge>
+        <div className="search-field">
+          <Search size={16} />
+          <Input value={query} placeholder="Search tasks" onChange={(event) => setQuery(event.target.value)} />
+        </div>
+        <div className="item-list">
+          {visibleTasks.map((task) => (
+            <div className={`todo task-row ${task.status === "complete" ? "done" : ""}`} key={task.id}>
+              <div className="row-between">
+                <label className="row task-check">
+                  <Checkbox checked={task.status === "complete"} onCheckedChange={(checked) => toggleTask(task.id, checked === true)} />
+                  <span className="todo-title">{task.title}</span>
+                </label>
+                <Badge>{task.status}</Badge>
+              </div>
+              {task.details && <p className="muted item-body">{task.details}</p>}
+              <div className="item-actions">
+                <span className="muted">{formatDate(task.completedAt ?? task.createdAt)}</span>
+                <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(task)}>
+                  <Edit3 size={14} /> Edit
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => deleteTask(task.id)}>
+                  <Trash2 size={14} /> Delete
+                </Button>
+              </div>
             </div>
-            {todo.summary && <div className="muted" style={{ marginTop: 6 }}>{todo.summary}</div>}
-          </motion.div>
-        ))}
+          ))}
+          {!visibleTasks.length && <EmptyState title="No tasks found" text="Add a task or adjust the search." />}
+        </div>
       </Card>
     </div>
   );
 }
 
-function WeeklyAssistant({ selectedMember, reports }: { selectedMember: Member; reports: Report[] }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [weeklyNote, setWeeklyNote] = useState("");
-  const memberReports = reports.filter((report) => report.member_id === selectedMember.id);
-  const draft = memberReports.find((report) => !report.archived) ?? memberReports[0];
-  const generate = useMutation({
-    mutationFn: api.generateReport,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["state"] }),
-  });
-  const archive = useMutation({
-    mutationFn: api.archiveReport,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["state"] }),
-  });
+function NotesView({ notes, setState }: { notes: MeetingNote[]; setState: React.Dispatch<React.SetStateAction<AppState>> }) {
+  const [activeId, setActiveId] = useState(notes[0]?.id ?? "");
+  const activeNote = notes.find((note) => note.id === activeId) ?? notes[0];
+  const [draft, setDraft] = useState(() => activeNote ?? createBlankNote());
+
+  useEffect(() => {
+    if (activeNote) setDraft(activeNote);
+  }, [activeNote?.id]);
+
+  const saveNote = () => {
+    const title = draft.title.trim() || "Untitled meeting";
+    const nextNote = { ...draft, title, content: draft.content, updatedAt: today() };
+    setState((current) => {
+      const exists = current.notes.some((note) => note.id === nextNote.id);
+      return {
+        ...current,
+        notes: exists
+          ? current.notes.map((note) => (note.id === nextNote.id ? nextNote : note))
+          : [nextNote, ...current.notes],
+      };
+    });
+    setActiveId(nextNote.id);
+  };
+
+  const newNote = () => {
+    const note = createBlankNote();
+    setDraft(note);
+    setActiveId(note.id);
+  };
+
+  const deleteNote = (noteId: string) => {
+    setState((current) => ({ ...current, notes: current.notes.filter((note) => note.id !== noteId) }));
+    const next = notes.find((note) => note.id !== noteId);
+    setActiveId(next?.id ?? "");
+    setDraft(next ?? createBlankNote());
+  };
+
+  const uploadNote = async (file: File | undefined) => {
+    if (!file) return;
+    const content = await file.text();
+    const title = file.name.replace(/\.(md|markdown|txt)$/i, "");
+    const note = { id: createId("note"), title, date: today(), updatedAt: today(), content };
+    setDraft(note);
+    setActiveId(note.id);
+    setState((current) => ({ ...current, notes: [note, ...current.notes] }));
+  };
 
   return (
-    <div className="grid two-col">
-      <Card className="stack">
-        <h2>{t("weekly.uploadTitle")}</h2>
-        <Textarea value={weeklyNote} onChange={(event) => setWeeklyNote(event.target.value)} placeholder={t("weekly.notePlaceholder")} />
-        <Button onClick={() => generate.mutate({ member_id: selectedMember.id, weekly_note: weeklyNote })}>
-          {generate.isPending ? <Loader2 size={16} /> : <Sparkles size={16} />} {t("weekly.generate")}
-        </Button>
-      </Card>
-
-      <Card className="stack">
+    <div className="grid notes-grid">
+      <Card className="stack note-list">
         <div className="row-between">
-          <h2>{t("weekly.currentReport")}</h2>
-          {draft?.markdown_path && <Badge>{draft.markdown_path}</Badge>}
+          <h2>Notes</h2>
+          <Button type="button" size="sm" onClick={newNote}>
+            <Plus size={15} /> New
+          </Button>
         </div>
-        {draft ? (
-          <>
-            {draft.archived ? <ReportSections report={draft} /> : <EditableReport key={draft.id} report={draft} />}
-            {!draft.archived && (
-              <Button variant="gold" onClick={() => archive.mutate(draft.id)}>
-                <Archive size={16} /> {t("weekly.archive")}
-              </Button>
-            )}
-          </>
-        ) : (
-          <p className="muted">{t("weekly.empty")}</p>
-        )}
+        <label className="upload-button">
+          <Upload size={15} />
+          Upload markdown
+          <Input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={(event) => uploadNote(event.target.files?.[0])} />
+        </label>
+        <div className="item-list">
+          {notes.map((note) => (
+            <button className={`note-tab ${note.id === activeId ? "active" : ""}`} key={note.id} onClick={() => setActiveId(note.id)}>
+              <span>{note.title}</span>
+              <small>{formatDate(note.date)}</small>
+            </button>
+          ))}
+          {!notes.length && <EmptyState title="No notes yet" text="Create a note or upload a markdown file." />}
+        </div>
+      </Card>
+
+      <Card className="stack markdown-editor">
+        <div className="row-between">
+          <h2>Markdown editor</h2>
+          <Badge>{formatDate(draft.date)}</Badge>
+        </div>
+        <div className="editor-fields">
+          <Input value={draft.title} placeholder="Meeting title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+          <Input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
+        </div>
+        <Textarea className="markdown-source" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
+        <div className="row-between">
+          <Button type="button" variant="secondary" disabled={!activeNote} onClick={() => activeNote && deleteNote(activeNote.id)}>
+            <Trash2 size={15} /> Delete
+          </Button>
+          <Button type="button" onClick={saveNote}>
+            <Save size={15} /> Save note
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="stack markdown-preview-card">
+        <h2>Preview</h2>
+        <div className="markdown-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(draft.content) }} />
       </Card>
     </div>
   );
 }
 
-function EditableReport({ report }: { report: Report }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const [completed, setCompleted] = useState(report.completed.join("\n"));
-  const [inProgress, setInProgress] = useState(report.in_progress.join("\n"));
-  const [nextWeek, setNextWeek] = useState(report.next_week.join("\n"));
-  const [risks, setRisks] = useState(report.risks.join("\n"));
-  const save = useMutation({
-    mutationFn: () =>
-      api.updateReport(report.id, {
-        completed: lines(completed),
-        in_progress: lines(inProgress),
-        next_week: lines(nextWeek),
-        risks: lines(risks),
-      }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["state"] }),
-  });
+function SummaryView({ filtered, stats, period }: { filtered: AppState; stats: ReturnType<typeof buildStats>; period: Period }) {
+  const completedTasks = filtered.tasks.filter((task) => task.status === "complete");
+  const openTasks = filtered.tasks.filter((task) => task.status === "open");
 
   return (
     <div className="stack">
-      <EditableSection title={t("report.completed")} value={completed} onChange={setCompleted} />
-      <EditableSection title={t("report.inProgress")} value={inProgress} onChange={setInProgress} />
-      <EditableSection title={t("report.nextWeek")} value={nextWeek} onChange={setNextWeek} />
-      <EditableSection title={t("report.risks")} value={risks} onChange={setRisks} />
-      <Button variant="secondary" onClick={() => save.mutate()}>
-        <FileText size={16} /> {t("weekly.saveDraft")}
-      </Button>
+      <StatsGrid stats={stats} />
+      <Card className="stack summary-panel">
+        <div className="row-between">
+          <h2>{periodLabel(period)} summary</h2>
+          <Badge>{filtered.tasks.length + filtered.notes.length} records</Badge>
+        </div>
+        <div className="summary-section">
+          <h3>Completed tasks</h3>
+          <SummaryList items={completedTasks.map((task) => ({ id: task.id, date: task.completedAt ?? task.createdAt, title: task.title, body: task.details }))} />
+        </div>
+        <div className="summary-section">
+          <h3>Open tasks</h3>
+          <SummaryList items={openTasks.map((task) => ({ id: task.id, date: task.createdAt, title: task.title, body: task.details }))} />
+        </div>
+        <div className="summary-section">
+          <h3>Meeting notes</h3>
+          <SummaryList items={filtered.notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: firstLines(note.content) }))} />
+        </div>
+      </Card>
     </div>
   );
 }
 
-function EditableSection({ title, value, onChange }: { title: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <label className="stack">
-      <strong>{title}</strong>
-      <Textarea className="compact" value={value} onChange={(event) => onChange(event.target.value)} />
-    </label>
-  );
-}
+function AchievementsView({ filtered, stats, period }: { filtered: AppState; stats: ReturnType<typeof buildStats>; period: Period }) {
+  const achievements = [
+    {
+      id: "completed",
+      title: "Execution streak",
+      value: stats.completedTasks,
+      target: 5,
+      text: "Completed tasks in the selected period.",
+    },
+    {
+      id: "notes",
+      title: "Meeting memory",
+      value: stats.notes,
+      target: 3,
+      text: "Saved meeting notes with dates and content.",
+    },
+    {
+      id: "archive",
+      title: "Historical record",
+      value: filtered.tasks.length + filtered.notes.length,
+      target: 10,
+      text: "Total historical task and note records.",
+    },
+  ];
 
-function lines(value: string): string[] {
-  return value.split("\n").map((line) => line.trim()).filter(Boolean);
-}
-
-function ReportSections({ report }: { report: Report }) {
-  const { t } = useTranslation();
   return (
     <div className="stack">
-      <Section title={t("report.completed")} items={report.completed} />
-      <Section title={t("report.inProgress")} items={report.in_progress} />
-      <Section title={t("report.nextWeek")} items={report.next_week} />
-      <Section title={t("report.risks")} items={report.risks} />
-    </div>
-  );
-}
-
-function Section({ title, items }: { title: string; items: string[] }) {
-  const { t } = useTranslation();
-  return (
-    <div>
-      <strong>{title}</strong>
-      <ul className="section-list">
-        {(items.length ? items : [t("report.none")]).map((item) => <li key={item}>{item}</li>)}
-      </ul>
-    </div>
-  );
-}
-
-function Wiki({ selectedMember, knowledge, tags }: { selectedMember: Member; knowledge: KnowledgeEntry[]; tags: Tag[] }) {
-  const { t } = useTranslation();
-  const [query, setQuery] = useState("");
-  const entries = knowledge.filter((entry) => entry.member_id === selectedMember.id && entry.text.toLowerCase().includes(query.toLowerCase()));
-  const memberTags = tags.filter((tag) => tag.member_id === selectedMember.id);
-  return (
-    <div className="grid two-col">
+      <StatsGrid stats={stats} />
+      <div className="grid three-col">
+        {achievements.map((achievement) => {
+          const unlocked = achievement.value >= achievement.target;
+          return (
+            <div className={`badge-card ${unlocked ? "unlocked" : ""}`} key={achievement.id}>
+              <div className="row-between">
+                <CheckCircle2 className="achievement-icon" />
+                <Badge>{achievement.value} / {achievement.target}</Badge>
+              </div>
+              <h2>{achievement.title}</h2>
+              <p className="muted">{achievement.text}</p>
+              <div className="progress-track">
+                <span style={{ width: `${Math.min(100, (achievement.value / achievement.target) * 100)}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
       <Card className="stack">
-        <h2>{t("wiki.profile")}</h2>
-        <p>{t("wiki.profileSummary", { name: selectedMember.name, entries: entries.length, tags: memberTags.length })}</p>
-        <div className="tag-cloud">
-          {memberTags.map((tag) => <span className="tag" key={tag.id}>{tag.name} · {tag.count}</span>)}
-        </div>
-      </Card>
-      <Card className="stack">
-        <div className="row">
-          <Search size={18} />
-          <Input value={query} placeholder={t("wiki.searchPlaceholder")} onChange={(event) => setQuery(event.target.value)} />
-        </div>
-        {entries.map((entry) => (
-          <div className="todo" key={entry.id}>
-            <div className="muted">{entry.week_key} · {entry.source} · {entry.markdown_path}</div>
-            <div>{entry.text}</div>
-          </div>
-        ))}
+        <h2>{periodLabel(period)} history</h2>
+        <SummaryList
+          items={[
+            ...filtered.tasks.map((task) => ({ id: task.id, date: task.completedAt ?? task.createdAt, title: task.title, body: task.status })),
+            ...filtered.notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: "meeting note" })),
+          ].sort((a, b) => b.date.localeCompare(a.date))}
+        />
       </Card>
     </div>
   );
 }
 
-function Achievements({ selectedMember, achievements }: { selectedMember: Member; achievements: Achievement[] }) {
-  const { t } = useTranslation();
-  const memberAchievements = achievements.filter((achievement) => achievement.member_id === selectedMember.id);
+function StatsGrid({ stats }: { stats: ReturnType<typeof buildStats> }) {
   return (
     <div className="grid three-col">
-      {memberAchievements.map((achievement) => (
-        <div className={`badge-card ${achievement.unlocked ? "unlocked" : ""}`} key={achievement.id}>
-          <div className="row-between">
-            <Flame color={achievement.unlocked ? "#e8b86d" : "#6b7a99"} />
-            <Badge>{achievement.progress} / {achievement.threshold}</Badge>
+      <Card className="metric-card">
+        <h2>Total tasks</h2>
+        <div className="metric-value">{stats.tasks}</div>
+        <p className="muted">{stats.completedTasks} completed</p>
+      </Card>
+      <Card className="metric-card">
+        <h2>Meeting notes</h2>
+        <div className="metric-value">{stats.notes}</div>
+        <p className="muted">{stats.noteWords} note words</p>
+      </Card>
+      <Card className="metric-card">
+        <h2>Completion</h2>
+        <div className="metric-value">{stats.completionRate}%</div>
+        <p className="muted">Selected period</p>
+      </Card>
+    </div>
+  );
+}
+
+function PeriodControl({ value, onChange }: { value: Period; onChange: (value: Period) => void }) {
+  return (
+    <ToggleGroup type="single" value={value} onValueChange={(next) => next && onChange(next as Period)} aria-label="Summary period">
+      <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
+      <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
+      <ToggleGroupItem value="monthly">Monthly</ToggleGroupItem>
+    </ToggleGroup>
+  );
+}
+
+function SummaryList({ items }: { items: Array<{ id: string; date: string; title: string; body?: string }> }) {
+  if (!items.length) return <EmptyState title="No records" text="Nothing matches this period yet." />;
+  return (
+    <div className="summary-list">
+      {items.map((item) => (
+        <div className="summary-item" key={item.id}>
+          <time>{formatDate(item.date)}</time>
+          <div>
+            <strong>{item.title}</strong>
+            {item.body && <p className="muted">{item.body}</p>}
           </div>
-          <h2 style={{ marginTop: 12 }}>{achievement.badge_name}</h2>
-          <p className="muted">{achievement.unlocked ? t("achievements.unlocked") : t("achievements.locked")}</p>
         </div>
       ))}
-      {!memberAchievements.length && <Card>{t("achievements.empty")}</Card>}
     </div>
   );
 }
 
-function Performance({ selectedMember, knowledge, tags }: { selectedMember: Member; knowledge: KnowledgeEntry[]; tags: Tag[] }) {
-  const { t } = useTranslation();
-  const entries = knowledge.filter((entry) => entry.member_id === selectedMember.id);
-  const memberTags = tags.filter((tag) => tag.member_id === selectedMember.id);
-  const score = Math.min(100, 60 + entries.length * 5 + memberTags.length * 3);
+function EmptyState({ title, text }: { title: string; text: string }) {
   return (
-    <div className="grid three-col">
-      <Card>
-        <h2>{t("performance.health")}</h2>
-        <div style={{ fontSize: 44, fontWeight: 750 }}>{score}%</div>
-        <p className="muted">{score >= 90 ? t("performance.healthy") : score >= 70 ? t("performance.attention") : t("performance.offTrack")}</p>
-      </Card>
-      <Card>
-        <h2>{t("performance.outputVolume")}</h2>
-        <div style={{ fontSize: 44, fontWeight: 750 }}>{entries.length}</div>
-        <p className="muted">{t("performance.archivedEntries")}</p>
-      </Card>
-      <Card>
-        <h2>{t("performance.capabilityTags")}</h2>
-        <div style={{ fontSize: 44, fontWeight: 750 }}>{memberTags.length}</div>
-        <p className="muted">{t("performance.activeSignals")}</p>
-      </Card>
+    <div className="empty-state">
+      <ListChecks size={18} />
+      <strong>{title}</strong>
+      <span>{text}</span>
     </div>
   );
 }
 
-function TeamPortrait({ members, tags }: { members: Member[]; tags: Tag[] }) {
-  const { t } = useTranslation();
-  const activeMembers = members.filter((member) => !member.is_manager);
-  return (
-    <div className="grid">
-      <Card>
-        <h2>{t("portrait.cloud")}</h2>
-        <div className="tag-cloud">
-          {tags.map((tag) => <span className="tag" key={tag.id}>{tag.name} · {tag.count}</span>)}
-        </div>
-      </Card>
-      <Card className="stack">
-        <h2>{t("portrait.snapshot")}</h2>
-        {activeMembers.map((member) => (
-          <div className="row-between todo" key={member.id}>
-            <strong>{member.name}</strong>
-            <div className="tag-cloud">
-              {tags.filter((tag) => tag.member_id === member.id).slice(0, 6).map((tag) => <Badge key={tag.id}>{tag.name}</Badge>)}
-            </div>
-          </div>
-        ))}
-      </Card>
-    </div>
-  );
-}
-
-function TeamSummary({ members }: { members: Member[] }) {
-  const { t, i18n } = useTranslation();
-  const queryClient = useQueryClient();
-  const selectable = members.filter((member) => !member.is_manager);
-  const [selected, setSelected] = useState<string[]>(selectable.map((member) => member.id));
-  const summary = useMutation({
-    mutationFn: api.teamSummary,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["state"] }),
+function usePersistentState(): [AppState, React.Dispatch<React.SetStateAction<AppState>>] {
+  const [state, setState] = useState<AppState>(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return seedState;
+    try {
+      return JSON.parse(stored) as AppState;
+    } catch {
+      return seedState;
+    }
   });
-  const toggle = (id: string) => setSelected((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
-  return (
-    <div className="grid two-col">
-      <Card className="stack">
-        <h2>{t("summary.configuration")}</h2>
-        {selectable.map((member) => (
-          <label className="row" key={member.id}>
-            <Checkbox checked={selected.includes(member.id)} onChange={() => toggle(member.id)} />
-            {member.name} · {t(`roles.${member.role}`)}
-          </label>
-        ))}
-        <Button onClick={() => summary.mutate({ member_ids: selected, weeks: 4, language: languageCode(i18n.language) })}>
-          <Brain size={16} /> {t("summary.generate")}
-        </Button>
-      </Card>
-      <Card className="stack">
-        <h2>{t("summary.output")}</h2>
-        {summary.data ? (
-          <>
-            <Badge>{summary.data.markdown_path}</Badge>
-            <pre className="markdown">{summary.data.markdown}</pre>
-          </>
-        ) : (
-          <p className="muted">{t("summary.empty")}</p>
-        )}
-      </Card>
-    </div>
-  );
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, [state]);
+
+  return [state, setState];
 }
 
-function ImportGuide({ members }: { members: Member[] }) {
-  const { t, i18n } = useTranslation();
-  const queryClient = useQueryClient();
-  const selectable = members.filter((member) => !member.is_manager);
-  const [memberId, setMemberId] = useState(selectable[0]?.id ?? "m1");
-  const [filename, setFilename] = useState(t("import.filename"));
-  const [weekKey, setWeekKey] = useState("");
-  const [content, setContent] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const importText = useMutation({
-    mutationFn: api.importText,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["state"] }),
-  });
-  const importFile = useMutation({
-    mutationFn: api.importFile,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["state"] }),
-  });
-  const latestImport = importText.data ?? importFile.data;
-  const language = languageCode(i18n.language);
-
-  return (
-    <div className="grid two-col">
-      <Card className="stack">
-        <h2>{t("import.title")}</h2>
-        <p className="muted">{t("import.description")}</p>
-        <div className="row">
-          <NativeSelect value={memberId} onChange={(event) => setMemberId(event.target.value)}>
-            {selectable.map((member) => (
-              <option key={member.id} value={member.id}>{member.name} · {t(`roles.${member.role}`)}</option>
-            ))}
-          </NativeSelect>
-          <Input value={weekKey} placeholder="2026-W19" onChange={(event) => setWeekKey(event.target.value)} />
-        </div>
-        <Input value={filename} onChange={(event) => setFilename(event.target.value)} />
-        <Textarea className="tall" value={content} onChange={(event) => setContent(event.target.value)} placeholder={t("import.sample")} />
-        <Button disabled={!content.trim()} onClick={() => importText.mutate({ member_id: memberId, filename, content, week_key: weekKey || undefined, archive: true, language })}>
-          <Archive size={16} /> {t("import.action")}
-        </Button>
-        <div className="stack">
-          <p className="muted">{t("import.fileHint")}</p>
-          <Input type="file" accept=".md,.txt,text/markdown,text/plain" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-          <Button variant="secondary" disabled={!file} onClick={() => file && importFile.mutate({ member_id: memberId, file, week_key: weekKey || undefined, archive: true, language })}>
-            <FileText size={16} /> {t("import.fileAction")}
-          </Button>
-        </div>
-      </Card>
-      <Card className="stack">
-        <h2>{t("import.result")}</h2>
-        {latestImport ? (
-          <>
-            <Badge>{latestImport.markdown_path}</Badge>
-            <p>{t("import.entriesCreated", { count: latestImport.knowledge_entries })}</p>
-            <ReportSections report={latestImport.report} />
-          </>
-        ) : (
-          <div className="todo">{t("import.empty")}</div>
-        )}
-      </Card>
-    </div>
-  );
+function resolveRouteFromHash(): Route {
+  const hash = window.location.hash.replace(/^#\/?/, "") as Route;
+  return nav.some((item) => item.key === hash) ? hash : "tasks";
 }
 
-function languageCode(language: string): "en" | "zh" {
-  return language.startsWith("zh") ? "zh" : "en";
+function createBlankNote(): MeetingNote {
+  return { id: createId("note"), title: "", date: today(), updatedAt: today(), content: "## Meeting notes\n\n- " };
 }
 
-function LoadingState() {
-  const { t } = useTranslation();
-  return (
-    <Card className="row">
-      <Loader2 size={18} /> {t("app.loadingState")}
-    </Card>
-  );
+function filterByPeriod(state: AppState, period: Period): AppState {
+  const inPeriod = (date: string) => isInPeriod(date, period);
+  return {
+    tasks: state.tasks.filter((task) => inPeriod(task.completedAt ?? task.createdAt)),
+    notes: state.notes.filter((note) => inPeriod(note.date)),
+  };
 }
 
-function AppContent() {
-  const { user, isLoading } = useAuth();
+function buildStats(state: AppState) {
+  const completedTasks = state.tasks.filter((task) => task.status === "complete").length;
+  const noteWords = state.notes.reduce((total, note) => total + note.content.trim().split(/\s+/).filter(Boolean).length, 0);
+  return {
+    tasks: state.tasks.length,
+    completedTasks,
+    notes: state.notes.length,
+    noteWords,
+    completionRate: state.tasks.length ? Math.round((completedTasks / state.tasks.length) * 100) : 0,
+  };
+}
 
-  if (isLoading) return <LoadingState />;
-  if (!user) return <LoginPage />;
+function isInPeriod(dateValue: string, period: Period) {
+  const date = startOfDay(new Date(dateValue));
+  const now = startOfDay(new Date());
+  if (period === "daily") return date.getTime() === now.getTime();
+  if (period === "weekly") {
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - now.getDay());
+    return date >= weekStart;
+  }
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+}
 
-  return <App />;
+function startOfDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function periodLabel(period: Period) {
+  return period.charAt(0).toUpperCase() + period.slice(1);
+}
+
+function firstLines(content: string) {
+  return content
+    .split("\n")
+    .map((line) => line.replace(/^#+\s*/, "").replace(/^[-*]\s*/, "").trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" · ");
+}
+
+function renderMarkdown(markdown: string) {
+  const escaped = markdown
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  return escaped
+    .split("\n")
+    .map((line) => {
+      if (line.startsWith("### ")) return `<h3>${line.slice(4)}</h3>`;
+      if (line.startsWith("## ")) return `<h2>${line.slice(3)}</h2>`;
+      if (line.startsWith("# ")) return `<h1>${line.slice(2)}</h1>`;
+      if (line.startsWith("- ")) return `<li>${line.slice(2)}</li>`;
+      if (!line.trim()) return "";
+      return `<p>${line}</p>`;
+    })
+    .join("");
+}
+
+function formatDate(dateValue: string) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(dateValue));
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function daysAgo(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
+function createId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
-    </QueryClientProvider>
+    <App />
   </React.StrictMode>,
 );
