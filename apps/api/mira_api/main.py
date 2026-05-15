@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request, Depends
@@ -15,7 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from .config import settings
 from .context import set_workspace_id, get_workspace_id
 from .dependencies import get_current_user_optional
-from .database import get_db_dependency
+from .database import get_db_dependency, initialize_database
 from .models import (
     Workspace, Member, Todo, WeeklyReport, KnowledgeEntry, Tag,
     AchievementEvent, TeamSummary, ImportBatch, UserWorkspace,
@@ -33,7 +34,13 @@ from .storage import (
 from .auth import router as auth_router
 from .workspaces import router as workspaces_router
 
-app = FastAPI(title="Mira API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    initialize_database()
+    yield
+
+
+app = FastAPI(title="Mira API", version="0.1.0", lifespan=lifespan)
 
 # CORS middleware
 app.add_middleware(
