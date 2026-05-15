@@ -36,6 +36,19 @@ npm run dev:web
 
 The API runs on `http://localhost:8000`. The web app usually runs on `http://localhost:5173`.
 
+Use hash anchors to jump to sidebar pages:
+
+```text
+http://localhost:5173/#workspace
+http://localhost:5173/#weekly
+http://localhost:5173/#wiki
+http://localhost:5173/#achievements
+http://localhost:5173/#performance
+http://localhost:5173/#portrait
+http://localhost:5173/#summary
+http://localhost:5173/#import
+```
+
 ---
 
 ## About Mira

@@ -16,7 +16,7 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import { Badge, Button, Card, Checkbox, Input, NativeSelect, Textarea, ToggleGroup } from "./components/ui";
@@ -49,9 +49,17 @@ const nav = [
 
 const queryClient = new QueryClient();
 
+const routeSet = new Set<Route>(nav.map((item) => item.key));
+
+function resolveRouteFromHash(): Route {
+  const hash = typeof window === "undefined" ? "" : window.location.hash.replace(/^#\/?/, "");
+  const next = (hash || "workspace").toLowerCase() as Route;
+  return routeSet.has(next) ? next : "workspace";
+}
+
 function App() {
   const { t, i18n } = useTranslation();
-  const [route, setRoute] = useState<Route>("workspace");
+  const [route, setRoute] = useState<Route>(resolveRouteFromHash());
   const [selectedMemberId, setSelectedMemberId] = useState("m1");
   const { data, isLoading, error } = useQuery({ queryKey: ["state"], queryFn: api.state });
 
@@ -62,6 +70,33 @@ function App() {
     localStorage.setItem("mira_language", nextLanguage);
     i18n.changeLanguage(nextLanguage);
   };
+
+  const navigateTo = (nextRoute: Route) => {
+    if (typeof window !== "undefined") {
+      if (window.location.hash !== `#${nextRoute}`) {
+        window.location.hash = `#${nextRoute}`;
+      }
+    }
+    setRoute(nextRoute);
+  };
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setRoute(resolveRouteFromHash());
+    };
+    handleHashChange();
+    window.addEventListener("hashchange", handleHashChange);
+    if (typeof window !== "undefined") {
+      const normalized = `#${resolveRouteFromHash()}`;
+      if (window.location.hash !== normalized) {
+        window.history.replaceState(null, "", normalized);
+      }
+    }
+
+    return () => {
+      window.removeEventListener("hashchange", handleHashChange);
+    };
+  }, []);
 
   return (
     <div className="app-shell">
@@ -97,7 +132,7 @@ function App() {
           {nav.map((item) => {
             const Icon = item.icon;
             return (
-              <button className={`nav-button ${route === item.key ? "active" : ""}`} key={item.key} onClick={() => setRoute(item.key)}>
+              <button className={`nav-button ${route === item.key ? "active" : ""}`} key={item.key} onClick={() => navigateTo(item.key)}>
                 <Icon size={18} />
                 {t(item.labelKey)}
               </button>
@@ -113,7 +148,7 @@ function App() {
             <h1>{pageTitle}</h1>
             <p className="muted">{t("app.subtitle")}</p>
           </div>
-          <Badge>{t("app.workspace")}</Badge>
+          <Badge>#{route}</Badge>
         </div>
 
         {isLoading && <LoadingState />}

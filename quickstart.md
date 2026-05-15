@@ -64,6 +64,19 @@ npm run dev:web
 
 Vite prints the local web URL, usually `http://localhost:5173`.
 
+You can jump directly to any sidebar tab with a hash anchor:
+
+```text
+http://localhost:5173/#workspace
+http://localhost:5173/#weekly
+http://localhost:5173/#wiki
+http://localhost:5173/#achievements
+http://localhost:5173/#performance
+http://localhost:5173/#portrait
+http://localhost:5173/#summary
+http://localhost:5173/#import
+```
+
 ## Runtime Data
 
 The API creates local runtime data in `mira-workspace/`:

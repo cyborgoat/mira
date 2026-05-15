@@ -198,6 +198,7 @@ def state(db: Session = Depends(get_db_dependency)) -> dict[str, object]:
     return {
         "members": [model_to_dict(m) for m in members],
         "todos": [model_to_dict(t) for t in todos],
+        "reports": [model_to_dict(r) for r in reports],
         "weekly_reports": [model_to_dict(r) for r in reports],
         "knowledge": [model_to_dict(k) for k in knowledge],
         "tags": [model_to_dict(t) for t in tags],
