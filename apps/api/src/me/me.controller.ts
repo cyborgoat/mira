@@ -6,7 +6,7 @@ import { TaskPriority, TaskStatus } from "../common/workspace-types";
 import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
-import { IngestLlmWikiSourceDto, LintLlmWikiDto, QueryLlmWikiDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
+import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, QueryLlmWikiDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
 import { MeService } from "./me.service";
 
 @UseGuards(JwtAuthGuard)
@@ -53,6 +53,11 @@ export class MeController {
   @Post("llm-wiki/ingest")
   ingestLlmWikiSource(@CurrentUser() user: AuthUser, @Body() payload: IngestLlmWikiSourceDto) {
     return this.me.ingestLlmWikiSource(user, payload);
+  }
+
+  @Post("llm-wiki/generate")
+  generateLlmWiki(@CurrentUser() user: AuthUser, @Body() payload: GenerateLlmWikiDto) {
+    return this.me.generateLlmWiki(user, payload);
   }
 
   @Post("llm-wiki/query")

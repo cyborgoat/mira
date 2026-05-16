@@ -103,7 +103,7 @@ MIRA_AI_API_KEY=...
 MIRA_AI_BASE_URL=https://api.openai.com/v1
 MIRA_AI_MODEL=gpt-5.2
 MIRA_AI_MAX_TOKENS=4000
-MIRA_WORKSPACE_ROOT=./resources/workspace
+MIRA_WORKSPACE_ROOT=./data/workspace
 MIRA_WIKI_ROOT=./data/llm-wiki
 ```
 
@@ -113,15 +113,15 @@ AI provider requests use the system `HTTPS_PROXY` or `https_proxy` by default. S
 Workspace records are markdown files linked to each person:
 
 ```text
-apps/api/resources/workspace/people/<person>/person.md
-apps/api/resources/workspace/people/<person>/tasks.md
-apps/api/resources/workspace/people/<person>/notes/*.md
+apps/api/data/workspace/people/<person>/person.md
+apps/api/data/workspace/people/<person>/tasks.md
+apps/api/data/workspace/people/<person>/notes/*.md
 ```
 
 Owners can edit their own records in personal mode. Managers and directors can view descendant records in team view.
 Set `MIRA_WORKSPACE_ROOT` to move editable workspace markdown outside the repository.
 
-LLM Wiki source files for manual import testing live in `apps/api/resources/examples/`:
+LLM Wiki source files for manual import testing live in `apps/api/data/examples/`:
 
 ```text
 llm-wiki/sources/*.md

@@ -38,6 +38,7 @@ type ViewMode = "personal" | "team";
 type TaskStatus = "open" | "complete";
 type TaskPriority = "low" | "normal" | "high" | "urgent";
 type Period = "daily" | "weekly" | "monthly";
+type LlmWikiPeriod = Period | "historical";
 type SettingsTab = "account" | "security" | "team";
 
 type TeamNode = {
@@ -274,6 +275,7 @@ function App() {
         {route === "llm-wiki" && (
           <LlmWikiView
             onLoad={api.loadLlmWiki}
+            onGenerate={api.generateLlmWiki}
             onUpload={api.uploadLlmWikiSource}
             onIngest={api.ingestLlmWikiSource}
             onQuery={api.queryLlmWiki}
@@ -753,6 +755,7 @@ function AchievementsView({ tasks, notes }: { tasks: Task[]; notes: MeetingNote[
 
 function LlmWikiView({
   onLoad,
+  onGenerate,
   onUpload,
   onIngest,
   onQuery,
@@ -760,6 +763,7 @@ function LlmWikiView({
   onReadPage,
 }: {
   onLoad: () => Promise<LlmWikiOverview>;
+  onGenerate: (payload: { period: LlmWikiPeriod; language: "en" | "zh" }) => Promise<LlmWikiIngestResult>;
   onUpload: (payload: { filename: string; content: string }) => Promise<LlmWikiSource>;
   onIngest: (payload: { sourcePath: string; language: "en" | "zh" }) => Promise<LlmWikiIngestResult>;
   onQuery: (payload: { question: string; language: "en" | "zh"; saveAsPage?: boolean }) => Promise<LlmWikiQueryResult>;
@@ -768,6 +772,7 @@ function LlmWikiView({
 }) {
   const { t, i18n: i18nInstance } = useTranslation();
   const [overview, setOverview] = useState<LlmWikiOverview | null>(null);
+  const [wikiPeriod, setWikiPeriod] = useState<LlmWikiPeriod>("weekly");
   const [selectedSource, setSelectedSource] = useState("");
   const [selectedPage, setSelectedPage] = useState("index.md");
   const [pageContent, setPageContent] = useState("");
@@ -778,6 +783,8 @@ function LlmWikiView({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const language = i18nInstance.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
+  const sourceCount = overview?.sources.length ?? 0;
+  const pageCount = overview?.pages.length ?? 0;
 
   const refresh = async () => {
     const next = await onLoad();
@@ -804,6 +811,23 @@ function LlmWikiView({
       const uploaded = await onUpload({ filename: file.name, content: await file.text() });
       setSelectedSource(uploaded.path);
       await refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateWorkspaceWiki = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await onGenerate({ period: wikiPeriod, language });
+      setAnswer(result.summary);
+      await refresh();
+      const writtenPage = result.writtenPages.find((path) => path.startsWith("pages/"));
+      if (writtenPage) await openPage(writtenPage);
+      else await openPage("index.md");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -889,103 +913,39 @@ function LlmWikiView({
 
   return (
     <div className="stack llm-wiki-shell">
-      <Card className="stack llm-wiki-panel">
-        <div className="panel-heading">
+      <Card className="stack llm-wiki-command">
+        <div className="llm-wiki-command-main">
           <div>
             <h2>{t("llmWiki.title")}</h2>
             <p className="muted">{t("llmWiki.help")}</p>
           </div>
-          <Badge>{t("common.private")}</Badge>
+          <div className="llm-wiki-metrics" aria-label={t("llmWiki.library")}>
+            <span><strong>{pageCount}</strong>{t("llmWiki.pageCount")}</span>
+            <span><strong>{sourceCount}</strong>{t("llmWiki.sourceCount")}</span>
+          </div>
         </div>
 
-        <div className="llm-wiki-actions">
-          <label className="stack">
-            <span>{t("llmWiki.uploadSource")}</span>
-            <Input
-              type="file"
-              accept=".md,.markdown,.txt,text/markdown,text/plain"
-              onChange={(event) => {
-                const input = event.currentTarget;
-                void uploadSource(input.files?.[0]).finally(() => { input.value = ""; });
-              }}
-            />
-          </label>
-          <label className="stack">
-            <span>{t("llmWiki.source")}</span>
-            <Select value={selectedSource} onValueChange={setSelectedSource}>
-              <SelectTrigger><SelectValue placeholder={t("llmWiki.noSource")} /></SelectTrigger>
-              <SelectContent>
-                {(overview?.sources ?? []).map((source) => (
-                  <SelectItem value={source.path} key={source.path}>{source.filename}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </label>
-          <Button type="button" disabled={loading || !selectedSource} onClick={ingestSource}>
-            <Upload size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.ingest")}
+        <div className="llm-wiki-generate-row">
+          <div className="segmented-switch llm-period-switch" role="group" aria-label={t("llmWiki.period")}>
+            {(["daily", "weekly", "monthly", "historical"] as const).map((period) => (
+              <button type="button" key={period} className={wikiPeriod === period ? "active" : ""} aria-pressed={wikiPeriod === period} onClick={() => setWikiPeriod(period)}>
+                {t(`llmWiki.periods.${period}`)}
+              </button>
+            ))}
+          </div>
+          <Button type="button" disabled={loading} onClick={generateWorkspaceWiki}>
+            <Sparkles size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.generate")}
           </Button>
         </div>
 
-        <div className="stack">
-          <Textarea className="compact" value={question} placeholder={t("llmWiki.questionPlaceholder")} onChange={(event) => setQuestion(event.target.value)} />
-          <div className="row-between">
-            <label className="inline-check">
-              <Checkbox checked={saveAsPage} onCheckedChange={(checked) => setSaveAsPage(checked === true)} />
-              <span>{t("llmWiki.saveAsPage")}</span>
-            </label>
-            <div className="cluster">
-              <Button type="button" variant="secondary" disabled={loading} onClick={runLint}>
-                <ListChecks size={15} /> {t("llmWiki.lint")}
-              </Button>
-              <Button type="button" disabled={loading || !question.trim()} onClick={askWiki}>
-                <Search size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.ask")}
-              </Button>
-            </div>
-          </div>
-        </div>
         {error && <div className="form-error">{error}</div>}
       </Card>
-
-      {answer && (
-        <Card className="stack llm-wiki-panel">
-          <div className="panel-heading">
-            <h2>{t("llmWiki.answer")}</h2>
-            {saveAsPage && <Badge>{t("llmWiki.savedPage")}</Badge>}
-          </div>
-          <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(answer) }} />
-        </Card>
-      )}
-
-      {lintResult && (
-        <Card className="stack llm-wiki-panel">
-          <h2>{t("llmWiki.health")}</h2>
-          <ul className="plain-list">
-            {lintResult.findings.map((finding) => <li key={finding}>{finding}</li>)}
-            {!lintResult.findings.length && <li>{t("llmWiki.noFindings")}</li>}
-          </ul>
-          {lintResult.notes && <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(lintResult.notes) }} />}
-        </Card>
-      )}
 
       <div className="llm-wiki-browser">
         <Card className="stack llm-wiki-sidebar">
           <div className="panel-heading">
-            <h2>{t("llmWiki.sources")}</h2>
-            <Badge>{overview?.sources.length ?? 0}</Badge>
-          </div>
-          <div className="wiki-list">
-            {(overview?.sources ?? []).map((source) => (
-              <button type="button" key={source.path} className={source.path === selectedSource ? "active" : ""} onClick={() => setSelectedSource(source.path)}>
-                <strong>{source.filename}</strong>
-                <span>{formatBytes(source.size)}</span>
-              </button>
-            ))}
-            {overview && !overview.sources.length && <span className="muted">{t("llmWiki.noSource")}</span>}
-          </div>
-
-          <div className="panel-heading">
             <h2>{t("llmWiki.pages")}</h2>
-            <Badge>{overview?.pages.length ?? 0}</Badge>
+            <Badge>{pageCount}</Badge>
           </div>
           <div className="wiki-list">
             <button type="button" className={selectedPage === "index.md" ? "active" : ""} onClick={() => void openPage("index.md")}>
@@ -1002,6 +962,7 @@ function LlmWikiView({
                 <span>{page.path}</span>
               </button>
             ))}
+            {overview && !overview.pages.length && <span className="muted">{t("llmWiki.noPages")}</span>}
           </div>
         </Card>
 
@@ -1019,6 +980,69 @@ function LlmWikiView({
             <EmptyState title={t("llmWiki.emptyTitle")} text={t("llmWiki.emptyText")} />
           )}
         </Card>
+
+        <div className="stack llm-wiki-tools">
+          {answer && (
+            <Card className="stack">
+              <div className="panel-heading">
+                <h2>{t("llmWiki.answer")}</h2>
+                {saveAsPage && <Badge>{t("llmWiki.savedPage")}</Badge>}
+              </div>
+              <div className="markdown compact-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(answer) }} />
+            </Card>
+          )}
+
+          <Card className="stack">
+            <h2>{t("llmWiki.askTitle")}</h2>
+            <Textarea className="compact" value={question} placeholder={t("llmWiki.questionPlaceholder")} onChange={(event) => setQuestion(event.target.value)} />
+            <label className="inline-check">
+              <Checkbox checked={saveAsPage} onCheckedChange={(checked) => setSaveAsPage(checked === true)} />
+              <span>{t("llmWiki.saveAsPage")}</span>
+            </label>
+            <div className="cluster">
+              <Button type="button" variant="secondary" disabled={loading} onClick={runLint}>
+                <ListChecks size={15} /> {t("llmWiki.lint")}
+              </Button>
+              <Button type="button" disabled={loading || !question.trim()} onClick={askWiki}>
+                <Search size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.ask")}
+              </Button>
+            </div>
+          </Card>
+
+          <Card className="stack">
+            <h2>{t("llmWiki.addSource")}</h2>
+            <Input
+              type="file"
+              accept=".md,.markdown,.txt,text/markdown,text/plain"
+              onChange={(event) => {
+                const input = event.currentTarget;
+                void uploadSource(input.files?.[0]).finally(() => { input.value = ""; });
+              }}
+            />
+            <Select value={selectedSource} onValueChange={setSelectedSource}>
+              <SelectTrigger><SelectValue placeholder={t("llmWiki.noSource")} /></SelectTrigger>
+              <SelectContent>
+                {(overview?.sources ?? []).map((source) => (
+                  <SelectItem value={source.path} key={source.path}>{source.filename}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="button" variant="secondary" disabled={loading || !selectedSource} onClick={ingestSource}>
+              <Upload size={15} /> {t("llmWiki.ingest")}
+            </Button>
+          </Card>
+
+          {lintResult && (
+            <Card className="stack">
+              <h2>{t("llmWiki.health")}</h2>
+              <ul className="plain-list">
+                {lintResult.findings.map((finding) => <li key={finding}>{finding}</li>)}
+                {!lintResult.findings.length && <li>{t("llmWiki.noFindings")}</li>}
+              </ul>
+              {lintResult.notes && <div className="markdown compact-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(lintResult.notes) }} />}
+            </Card>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1538,6 +1562,8 @@ function useMiraApi() {
     updateNote: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) => mutate(() => request(`/me/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteNote: (id: string) => mutate(() => request(`/me/notes/${id}`, { method: "DELETE" })),
     loadLlmWiki: () => request<LlmWikiOverview>("/me/llm-wiki"),
+    generateLlmWiki: (payload: { period: LlmWikiPeriod; language: "en" | "zh" }) =>
+      request<LlmWikiIngestResult>("/me/llm-wiki/generate", { method: "POST", body: JSON.stringify(payload) }),
     uploadLlmWikiSource: (payload: { filename: string; content: string }) =>
       request<LlmWikiSource>("/me/llm-wiki/sources", { method: "POST", body: JSON.stringify(payload) }),
     ingestLlmWikiSource: (payload: { sourcePath: string; language: "en" | "zh" }) =>

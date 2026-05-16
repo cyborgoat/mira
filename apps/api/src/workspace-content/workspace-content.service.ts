@@ -358,14 +358,14 @@ export class WorkspaceContentService {
   }
 
   private workspaceRoot() {
-    return resolve(process.env.MIRA_WORKSPACE_ROOT || join(this.resourcesDir(), "workspace"));
+    return resolve(process.env.MIRA_WORKSPACE_ROOT || join(this.dataDir(), "workspace"));
   }
 
-  private resourcesDir() {
+  private dataDir() {
     const candidates = [
-      resolve(__dirname, "../../resources"),
-      resolve(process.cwd(), "apps/api/resources"),
-      resolve(process.cwd(), "resources"),
+      resolve(__dirname, "../../data"),
+      resolve(process.cwd(), "apps/api/data"),
+      resolve(process.cwd(), "data"),
     ];
     return candidates.find((path) => existsSync(path)) || candidates[0];
   }

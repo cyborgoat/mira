@@ -9,7 +9,7 @@ Date: 2026-05-17
 2. Start the web app.
 3. Sign in with a demo account.
 4. Open the LLM Wiki route.
-5. Upload one markdown source from `apps/api/resources/examples/llm-wiki/sources/`.
+5. Upload one markdown source from `apps/api/data/examples/llm-wiki/sources/`.
 6. Ingest the source.
 7. Ask a question and optionally save the answer as a page.
 

@@ -136,6 +136,35 @@ export class AiService {
     };
   }
 
+  async ingestWikiContent(userId: string, payload: { sourceName: string; content: string; language: LlmWikiLanguage }): Promise<LlmWikiIngestResult> {
+    const vault = await this.ensureVault(userId);
+    const context = await this.wikiContext(vault.wikiDir);
+    const parsed = await this.completeJson(this.wikiJsonSystem(), [
+      this.languageLine(payload.language),
+      "Generate or refresh the persistent markdown wiki from the user's workspace tasks and notes.",
+      "The workspace content is the default source of truth. Create or update durable wiki pages and update index.md.",
+      "Return JSON with this shape: {\"summary\":\"string\",\"files\":[{\"path\":\"index.md or pages/name.md\",\"content\":\"markdown\"}],\"logEntry\":\"string\"}.",
+      "Do not write raw sources or log.md in files. Use Obsidian-style [[links]] where helpful.",
+      "",
+      "Existing wiki context:",
+      context,
+      "",
+      `Source name: ${payload.sourceName}`,
+      "Workspace source content:",
+      payload.content.slice(0, this.sourcePromptChars()),
+    ].join("\n"));
+
+    const writtenPages = await this.applyWikiFiles(vault.wikiDir, parsed.files);
+    const logEntry = this.optionalString(parsed.logEntry) || `generate | ${payload.sourceName}`;
+    await this.appendLog(vault.wikiDir, logEntry);
+    return {
+      sourcePath: payload.sourceName,
+      summary: this.optionalString(parsed.summary) || "Workspace wiki generated.",
+      writtenPages,
+      logEntry,
+    };
+  }
+
   async queryWiki(userId: string, payload: { question: string; language: LlmWikiLanguage; saveAsPage?: boolean }): Promise<LlmWikiQueryResult> {
     const question = payload.question.trim();
     if (!question) throw new BadRequestException("Question is required");
@@ -202,7 +231,7 @@ export class AiService {
 
   private async ensureVault(userId: string) {
     const safeUserId = userId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const root = resolve(this.configString("MIRA_WIKI_ROOT", resolve(process.cwd(), "data", "llm-wiki")));
+    const root = resolve(this.configString("MIRA_WIKI_ROOT", join(this.dataDir(), "llm-wiki")));
     const vaultDir = join(root, safeUserId);
     const rawDir = join(vaultDir, "raw");
     const wikiDir = join(vaultDir, "wiki");
@@ -215,6 +244,15 @@ export class AiService {
   private async ensureFile(path: string, content: string) {
     if (existsSync(path)) return;
     await writeFile(path, content, "utf8");
+  }
+
+  private dataDir() {
+    const candidates = [
+      resolve(__dirname, "../../data"),
+      resolve(process.cwd(), "apps/api/data"),
+      resolve(process.cwd(), "data"),
+    ];
+    return candidates.find((path) => existsSync(path)) || candidates[0];
   }
 
   private async listSources(rawDir: string): Promise<LlmWikiSource[]> {

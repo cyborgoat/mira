@@ -20,6 +20,14 @@ export class IngestLlmWikiSourceDto {
   language!: "en" | "zh";
 }
 
+export class GenerateLlmWikiDto {
+  @IsIn(["daily", "weekly", "monthly", "historical"])
+  period!: "daily" | "weekly" | "monthly" | "historical";
+
+  @IsIn(["en", "zh"])
+  language!: "en" | "zh";
+}
+
 export class QueryLlmWikiDto {
   @IsString()
   @MinLength(1)

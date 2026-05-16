@@ -12,7 +12,7 @@ import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { UsersService } from "../users/users.service";
 import { WorkspaceContentService } from "../workspace-content/workspace-content.service";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
-import { IngestLlmWikiSourceDto, LintLlmWikiDto, QueryLlmWikiDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
+import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, QueryLlmWikiDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
 
 @Injectable()
 export class MeService {
@@ -100,6 +100,21 @@ export class MeService {
     return this.ai.ingestWikiSource(user.id, payload);
   }
 
+  async generateLlmWiki(user: AuthUser, payload: GenerateLlmWikiDto) {
+    const ownerNodeId = this.requireOwnNode(user);
+    const [node, tasks, notes] = await Promise.all([
+      this.prisma.teamNode.findUnique({ where: { id: ownerNodeId } }),
+      this.content.listTasks({ nodeIds: [ownerNodeId] }),
+      this.content.listNotes({ nodeIds: [ownerNodeId] }),
+    ]);
+    const filtered = this.filterWikiPeriod(tasks, notes, payload.period);
+    return this.ai.ingestWikiContent(user.id, {
+      language: payload.language,
+      sourceName: `workspace-${payload.period}`,
+      content: this.workspaceWikiSource(payload.period, node?.name || user.email, filtered),
+    });
+  }
+
   queryLlmWiki(user: AuthUser, payload: QueryLlmWikiDto) {
     return this.ai.queryWiki(user.id, payload);
   }
@@ -169,6 +184,51 @@ export class MeService {
         return (date instanceof Date ? date : new Date(date)) >= start;
       }),
     };
+  }
+
+  private filterWikiPeriod<TTask, TNote>(tasks: TTask[], notes: TNote[], period: GenerateLlmWikiDto["period"]) {
+    if (period === "historical") return { tasks, notes };
+    return this.filterByPeriod(tasks, notes, period);
+  }
+
+  private workspaceWikiSource(
+    period: GenerateLlmWikiDto["period"],
+    ownerName: string,
+    data: { tasks: unknown[]; notes: unknown[] },
+  ) {
+    const taskLines = data.tasks.map((task) => {
+      const item = task as { title: string; details: string; status: string; priority: string; dueDate: string | null; updatedAt: string };
+      return [
+        `- ${item.title}`,
+        `  - Status: ${item.status}`,
+        `  - Priority: ${item.priority}`,
+        item.dueDate ? `  - Due: ${item.dueDate.slice(0, 10)}` : "",
+        item.details ? `  - Details: ${item.details}` : "",
+        `  - Updated: ${item.updatedAt}`,
+      ].filter(Boolean).join("\n");
+    });
+    const noteLines = data.notes.map((note) => {
+      const item = note as { title: string; date: string; tags: string; content: string };
+      return [
+        `## ${item.title}`,
+        `Date: ${item.date.slice(0, 10)}`,
+        item.tags ? `Tags: ${item.tags}` : "",
+        "",
+        item.content,
+      ].filter(Boolean).join("\n");
+    });
+    return [
+      `# Workspace Source: ${ownerName}`,
+      "",
+      `Period: ${period}`,
+      `Generated at: ${new Date().toISOString()}`,
+      "",
+      "## Tasks",
+      taskLines.length ? taskLines.join("\n\n") : "No tasks in this period.",
+      "",
+      "## Notes",
+      noteLines.length ? noteLines.join("\n\n") : "No notes in this period.",
+    ].join("\n");
   }
 
   private requireOwnNode(user: AuthUser) {

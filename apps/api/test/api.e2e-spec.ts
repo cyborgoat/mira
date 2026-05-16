@@ -21,7 +21,7 @@ describe("Mira Nest API", () => {
     rmSync(dbPath, { force: true });
     rmSync(wikiRoot, { force: true, recursive: true });
     rmSync(workspaceRoot, { force: true, recursive: true });
-    cpSync(join(apiRoot, "resources", "workspace"), workspaceRoot, { recursive: true });
+    cpSync(join(apiRoot, "data", "workspace"), workspaceRoot, { recursive: true });
     process.env.MIRA_DATABASE_URL = `file:${dbPath}`;
     process.env.DATABASE_URL = `file:${dbPath}`;
     process.env.MIRA_WIKI_ROOT = wikiRoot;
@@ -238,6 +238,17 @@ describe("Mira Nest API", () => {
       }),
     } as Response);
 
+    const generated = await request(app.getHttpServer())
+      .post("/me/llm-wiki/generate")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ period: "weekly", language: "en" })
+      .expect(201);
+    expect(generated.body.summary).toBe("Roadmap source ingested.");
+    let aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
+    expect(aiBody.messages[1].content).toContain("Source name: workspace-weekly");
+    expect(aiBody.messages[1].content).toContain("Review onboarding wiki scope");
+    expect(aiBody.messages[1].content).not.toContain("Polish LLM Wiki console states");
+
     const ingest = await request(app.getHttpServer())
       .post("/me/llm-wiki/ingest")
       .set("Authorization", `Bearer ${managerToken}`)
@@ -245,7 +256,7 @@ describe("Mira Nest API", () => {
       .expect(201);
     expect(ingest.body.summary).toBe("Roadmap source ingested.");
     expect(ingest.body.writtenPages).toContain("pages/roadmap.md");
-    let aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
+    aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
     expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("https://ai.example/v1/chat/completions");
     expect(aiBody.model).toBe("test-model");
     expect(aiBody.messages[1].content).toContain("Persistent wiki source only.");
