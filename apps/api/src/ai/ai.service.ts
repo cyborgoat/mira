@@ -1,5 +1,8 @@
 import { BadGatewayException, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import * as https from "node:https";
+import * as net from "node:net";
+import * as tls from "node:tls";
 
 export type AiLanguage = "en" | "zh";
 
@@ -95,9 +98,12 @@ export class AiService {
     const timeoutMs = Number(this.config.get<string>("MIRA_AI_TIMEOUT_MS", "45000")) || 45000;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, { ...init, signal: controller.signal });
-      const body = await response.text();
-      if (!response.ok) throw new BadGatewayException(`AI provider request failed: ${response.status}${this.providerError(body)}`);
+      const response = await this.requestText(url, { ...init, signal: controller.signal });
+      const body = response.body;
+      if (!response.ok) {
+        const prefix = response.status === 401 || response.status === 403 ? "AI provider authentication failed" : "AI provider request failed";
+        throw new BadGatewayException(`${prefix}: ${response.status}${this.providerError(body)}`);
+      }
       try {
         return JSON.parse(body);
       } catch {
@@ -110,6 +116,129 @@ export class AiService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private async requestText(url: string, init: RequestInit) {
+    const proxyUrl = this.proxyUrl(url);
+    if (proxyUrl) return this.requestTextViaProxy(url, init, proxyUrl);
+    const response = await fetch(url, init);
+    return { ok: response.ok, status: response.status, body: await response.text() };
+  }
+
+  private proxyUrl(targetUrl: string) {
+    const target = new URL(targetUrl);
+    const configured = this.config.get<string>("MIRA_AI_PROXY", "").trim();
+    if (this.proxyDisabled(configured)) return "";
+    if (configured) return configured;
+    if (this.noProxyMatches(target.hostname)) return "";
+    if (target.protocol === "https:") {
+      return this.config.get<string>("HTTPS_PROXY", "").trim()
+        || this.config.get<string>("https_proxy", "").trim()
+        || this.config.get<string>("HTTP_PROXY", "").trim()
+        || this.config.get<string>("http_proxy", "").trim();
+    }
+    return "";
+  }
+
+  private proxyDisabled(value: string) {
+    return ["0", "false", "off", "none", "direct", "disabled", "no"].includes(value.toLowerCase());
+  }
+
+  private noProxyMatches(hostname: string) {
+    const value = this.config.get<string>("NO_PROXY", "").trim() || this.config.get<string>("no_proxy", "").trim();
+    if (!value) return false;
+    return value.split(",").map((item) => item.trim()).filter(Boolean).some((pattern) => {
+      if (pattern === "*") return true;
+      if (pattern.startsWith(".")) return hostname.endsWith(pattern);
+      return hostname === pattern || hostname.endsWith(`.${pattern}`);
+    });
+  }
+
+  private requestTextViaProxy(url: string, init: RequestInit, proxyUrl: string) {
+    const target = new URL(url);
+    if (target.protocol !== "https:") return fetch(url, init).then(async (response) => ({ ok: response.ok, status: response.status, body: await response.text() }));
+    const proxy = new URL(proxyUrl);
+    const body = typeof init.body === "string" ? init.body : "";
+    const headers = {
+      ...this.headerRecord(init.headers),
+      "Accept-Encoding": "identity",
+      "Content-Length": Buffer.byteLength(body).toString(),
+    };
+
+    return new Promise<{ ok: boolean; status: number; body: string }>((resolve, reject) => {
+      const options: https.RequestOptions & { createConnection: (options: unknown, callback: (error: Error | null, socket?: net.Socket | tls.TLSSocket) => void) => net.Socket | undefined } = {
+        hostname: target.hostname,
+        port: Number(target.port || 443),
+        method: init.method || "GET",
+        path: `${target.pathname}${target.search}`,
+        headers,
+        createConnection: (_options, callback) => {
+          this.createProxyTunnel(target, proxy, callback as (error: Error | null, socket?: tls.TLSSocket) => void);
+          return undefined;
+        },
+      };
+      const request = https.request(options, (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.on("end", () => {
+          const status = response.statusCode || 0;
+          resolve({ ok: status >= 200 && status < 300, status, body: Buffer.concat(chunks).toString("utf8") });
+        });
+      });
+      request.on("error", reject);
+      if (init.signal) init.signal.addEventListener("abort", () => request.destroy(new Error("request aborted")), { once: true });
+      if (body) request.write(body);
+      request.end();
+    });
+  }
+
+  private createProxyTunnel(target: URL, proxy: URL, callback: (error: Error | null, socket?: tls.TLSSocket) => void) {
+    const proxyPort = Number(proxy.port || (proxy.protocol === "https:" ? 443 : 80));
+    const proxySocket = proxy.protocol === "https:"
+      ? tls.connect({ host: proxy.hostname, port: proxyPort, servername: proxy.hostname })
+      : net.connect({ host: proxy.hostname, port: proxyPort });
+    let settled = false;
+    let buffered = "";
+
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      proxySocket.destroy();
+      callback(error);
+    };
+
+    proxySocket.setTimeout(15000, () => fail(new Error("proxy connection timed out")));
+    proxySocket.once("error", fail);
+    const connect = () => {
+      const targetPort = target.port || "443";
+      const auth = proxy.username ? `Proxy-Authorization: Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString("base64")}\r\n` : "";
+      proxySocket.write(`CONNECT ${target.hostname}:${targetPort} HTTP/1.1\r\nHost: ${target.hostname}:${targetPort}\r\n${auth}Proxy-Connection: Keep-Alive\r\n\r\n`);
+    };
+    if (proxy.protocol === "https:") proxySocket.once("secureConnect", connect);
+    else proxySocket.once("connect", connect);
+    proxySocket.on("data", (chunk) => {
+      if (settled) return;
+      buffered += chunk.toString("latin1");
+      const end = buffered.indexOf("\r\n\r\n");
+      if (end === -1) return;
+      const statusLine = buffered.slice(0, buffered.indexOf("\r\n"));
+      const status = Number(statusLine.split(" ")[1]);
+      if (status !== 200) return fail(new Error(`proxy CONNECT failed: ${status || "unknown"}`));
+      settled = true;
+      proxySocket.removeAllListeners("data");
+      proxySocket.removeAllListeners("error");
+      proxySocket.setTimeout(0);
+      const secureSocket = tls.connect({ socket: proxySocket, servername: target.hostname }, () => callback(null, secureSocket));
+      secureSocket.once("error", (error) => callback(error));
+    });
+  }
+
+  private headerRecord(headers: HeadersInit | undefined) {
+    const result: Record<string, string> = {};
+    new Headers(headers).forEach((value, key) => {
+      result[key] = value;
+    });
+    return result;
   }
 
   private parseSummary(text: string): AiSummary {

@@ -105,6 +105,7 @@ MIRA_AI_MODEL=gpt-5.2
 ```
 
 Supported provider values are `openai`, `openrouter`, `anthropic`, and `custom-openai-compatible`.
+AI provider requests use the system `HTTPS_PROXY` or `https_proxy` by default. Set `MIRA_AI_PROXY=off` in `apps/api/.env` to bypass proxy, or set `MIRA_AI_PROXY=http://host:port` to override it.
 
 ## Product Notes
 

@@ -48,6 +48,7 @@ describe("Mira Nest API", () => {
     delete process.env.MIRA_AI_BASE_URL;
     delete process.env.MIRA_AI_MODEL;
     delete process.env.MIRA_AI_TIMEOUT_MS;
+    delete process.env.MIRA_AI_PROXY;
   });
 
   it("logs in with the seeded superuser", async () => {
@@ -180,6 +181,7 @@ describe("Mira Nest API", () => {
     process.env.MIRA_AI_API_KEY = "test-key";
     process.env.MIRA_AI_BASE_URL = "https://ai.example/v1";
     process.env.MIRA_AI_MODEL = "test-model";
+    process.env.MIRA_AI_PROXY = "off";
     const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
       ok: true,
       status: 200,

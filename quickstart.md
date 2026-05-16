@@ -101,6 +101,8 @@ MIRA_AI_MODEL=gpt-5.2
 
 Provider values supported by the API are `openai`, `openrouter`, `anthropic`, and `custom-openai-compatible`. Without `MIRA_AI_API_KEY`, the AI Summary tab will show a backend configuration error when generation is requested.
 
+AI provider requests use the system `HTTPS_PROXY` or `https_proxy` by default. Set `MIRA_AI_PROXY=off` in `apps/api/.env` to bypass proxy, or set `MIRA_AI_PROXY=http://host:port` to override it.
+
 ## Useful Commands
 
 ```bash

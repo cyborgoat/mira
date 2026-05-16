@@ -83,7 +83,7 @@ export class MeService {
     if (!current) throw new NotFoundException("User not found");
     const matches = await bcrypt.compare(payload.currentPassword, current.passwordHash);
     if (!matches) throw new ForbiddenException("Current password is incorrect");
-    const rounds = this.config.get<number>("MIRA_BCRYPT_ROUNDS", 12);
+    const rounds = Number(this.config.get<string>("MIRA_BCRYPT_ROUNDS", "12")) || 12;
     await this.prisma.user.update({
       where: { id: user.id },
       data: { passwordHash: await bcrypt.hash(payload.newPassword, rounds) },
