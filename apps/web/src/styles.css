@@ -1008,6 +1008,13 @@ label strong {
   margin: 3px 0 0;
 }
 
+.summary-item small {
+  display: block;
+  color: var(--mira-muted);
+  font-size: 12px;
+  margin-bottom: 3px;
+}
+
 .progress-track {
   height: 6px;
   overflow: hidden;

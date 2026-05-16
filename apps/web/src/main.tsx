@@ -222,7 +222,7 @@ function App() {
             onDelete={api.deleteNote}
           />
         )}
-        {route === "stats" && <StatsView view={activeView} period={period} />}
+        {route === "stats" && <StatsView view={activeView} period={period} nodes={api.teamNodes} showOwners={viewMode === "team"} />}
         {route === "settings" && (
           <SettingsView
             user={api.user}
@@ -607,12 +607,26 @@ function NotesView({
   );
 }
 
-function StatsView({ view, period }: { view: WorkView | null; period: Period }) {
+function StatsView({ view, period, nodes, showOwners }: { view: WorkView | null; period: Period; nodes: TeamNode[]; showOwners: boolean }) {
   const { t } = useTranslation();
   const tasks = view?.tasks ?? [];
   const notes = view?.notes ?? [];
   const completedTasks = tasks.filter((task) => task.status === "complete");
   const openTasks = tasks.filter((task) => task.status === "open");
+  const taskItems = (items: Task[]) => items.map((task) => ({
+    id: task.id,
+    date: task.completedAt ?? task.dueDate ?? task.createdAt,
+    title: task.title,
+    eyebrow: showOwners ? nodeLabel(nodes, task.ownerNodeId) : undefined,
+    body: task.details,
+  }));
+  const noteItems = notes.map((note) => ({
+    id: note.id,
+    date: note.date,
+    title: note.title,
+    eyebrow: showOwners ? nodeLabel(nodes, note.ownerNodeId) : undefined,
+    body: firstLines(note.content),
+  }));
   return (
     <div className="stack">
       <StatsGrid stats={buildStats(tasks, notes)} />
@@ -628,15 +642,15 @@ function StatsView({ view, period }: { view: WorkView | null; period: Period }) 
         </div>
         <div className="summary-section">
           <h3>{t("stats.completedTasks")}</h3>
-          <SummaryList items={completedTasks.map((task) => ({ id: task.id, date: task.completedAt ?? task.createdAt, title: task.title, body: task.details }))} />
+          <SummaryList items={taskItems(completedTasks)} />
         </div>
         <div className="summary-section">
           <h3>{t("stats.openTasks")}</h3>
-          <SummaryList items={openTasks.map((task) => ({ id: task.id, date: task.dueDate ?? task.createdAt, title: task.title, body: task.details }))} />
+          <SummaryList items={taskItems(openTasks)} />
         </div>
         <div className="summary-section">
           <h3>{t("stats.meetingNotes")}</h3>
-          <SummaryList items={notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: firstLines(note.content) }))} />
+          <SummaryList items={noteItems} />
         </div>
       </Card>
       <AchievementsView tasks={tasks} notes={notes} />
@@ -962,7 +976,7 @@ function PeriodControl({ value, onChange }: { value: Period; onChange: (value: P
   );
 }
 
-function SummaryList({ items }: { items: Array<{ id: string; date: string; title: string; body?: string }> }) {
+function SummaryList({ items }: { items: Array<{ id: string; date: string; title: string; eyebrow?: string; body?: string }> }) {
   const { t } = useTranslation();
   if (!items.length) return <EmptyState title={t("empty.noRecords")} text={t("empty.noRecordsText")} />;
   return (
@@ -970,7 +984,11 @@ function SummaryList({ items }: { items: Array<{ id: string; date: string; title
       {items.map((item) => (
         <div className="summary-item" key={item.id}>
           <time>{formatDate(item.date)}</time>
-          <div><strong>{item.title}</strong>{item.body && <p className="muted">{item.body}</p>}</div>
+          <div>
+            {item.eyebrow && <small>{item.eyebrow}</small>}
+            <strong>{item.title}</strong>
+            {item.body && <p className="muted">{item.body}</p>}
+          </div>
         </div>
       ))}
     </div>
