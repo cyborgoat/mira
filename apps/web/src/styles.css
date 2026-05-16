@@ -675,30 +675,86 @@ label strong {
   margin: 8px 0 8px;
 }
 
-.ai-control-panel {
-  max-width: 900px;
+.llm-wiki-shell {
+  max-width: 1180px;
 }
 
-.ai-controls {
+.llm-wiki-panel {
+  max-width: 980px;
+}
+
+.llm-wiki-actions {
+  align-items: end;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(220px, 1fr) auto;
+  gap: 10px;
+}
+
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
-.ai-card-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
+.inline-check {
+  align-items: center;
+  color: var(--mira-text);
+  display: inline-flex;
+  gap: 8px;
 }
 
-.ai-card ul {
-  margin: 0;
-  padding-left: 18px;
+.plain-list {
   color: var(--mira-muted);
   line-height: 1.6;
+  margin: 0;
+  padding-left: 18px;
 }
 
-.ai-card li + li {
-  margin-top: 6px;
+.llm-wiki-browser {
+  align-items: start;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.35fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.llm-wiki-sidebar {
+  position: sticky;
+  top: 12px;
+}
+
+.wiki-list {
+  display: grid;
+  gap: 6px;
+}
+
+.wiki-list button {
+  background: transparent;
+  border: 1px solid var(--mira-border);
+  border-radius: 8px;
+  color: var(--mira-text);
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.wiki-list button.active,
+.wiki-list button:hover {
+  background: var(--mira-soft);
+  border-color: oklch(0.58 0.08 250);
+}
+
+.wiki-list span {
+  color: var(--mira-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-wiki-reader .markdown {
+  min-height: 380px;
 }
 
 .markdown {
@@ -1090,7 +1146,7 @@ label strong {
 
   .two-col,
   .three-col,
-  .ai-card-grid,
+  .llm-wiki-browser,
   .notes-grid,
   .team-grid,
   .settings-layout {
@@ -1105,6 +1161,10 @@ label strong {
 
   .settings-tab {
     flex: 0 0 auto;
+  }
+
+  .llm-wiki-sidebar {
+    position: static;
   }
 
   .editor-panel {
@@ -1144,7 +1204,7 @@ label strong {
 
   .summary-section,
   .summary-item,
-  .ai-controls,
+  .llm-wiki-actions,
   .editor-fields,
   .filter-row,
   .settings-form {

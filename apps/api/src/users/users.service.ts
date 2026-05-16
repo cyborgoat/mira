@@ -1,7 +1,6 @@
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { Prisma, User } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
-import { createId } from "../common/ids";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
@@ -9,7 +8,7 @@ export class UsersService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
-    await this.ensureSeedSuperuser();
+    await this.ensureWorkspaceBootstrapData();
   }
 
   findByEmail(email: string) {
@@ -44,7 +43,7 @@ export class UsersService implements OnModuleInit {
     };
   }
 
-  private async ensureSeedSuperuser() {
+  private async ensureWorkspaceBootstrapData() {
     const password = process.env.MIRA_SUPERUSER_PASSWORD || "local-password";
     const passwordHash = await bcrypt.hash(password, 12);
 
@@ -109,61 +108,6 @@ export class UsersService implements OnModuleInit {
       isSuperuser: false,
       teamNodeId: sam.id,
     });
-
-    await this.seedWorkRecords([
-      {
-        nodeId: manager.id,
-        title: "Review team roadmap",
-        details: "Prepare staffing risks and delivery priorities for the weekly review.",
-        priority: "high",
-      },
-      {
-        nodeId: alex.id,
-        title: "Polish dashboard layout",
-        details: "Tighten personal work stats and mobile spacing.",
-        priority: "normal",
-      },
-      {
-        nodeId: alex.id,
-        title: "Close keyboard shortcut bug",
-        details: "Ensure save and new actions do not fire while typing in selectors.",
-        priority: "urgent",
-        complete: true,
-      },
-      {
-        nodeId: sam.id,
-        title: "Add scoped API tests",
-        details: "Cover manager read-only team view and member personal mode.",
-        priority: "high",
-      },
-      {
-        nodeId: sam.id,
-        title: "Document seeded users",
-        details: "Update quickstart with manager and member test accounts.",
-        priority: "low",
-        complete: true,
-      },
-    ]);
-    await this.seedNotes([
-      {
-        nodeId: manager.id,
-        title: "Manager weekly sync",
-        content: "## Notes\n- Team view should be read-only\n- Main workspace should default to personal work",
-        tags: "planning,management",
-      },
-      {
-        nodeId: alex.id,
-        title: "Frontend focus",
-        content: "## Decisions\n- Move superuser tools into settings\n- Keep work pages quiet and task-focused",
-        tags: "frontend,ux",
-      },
-      {
-        nodeId: sam.id,
-        title: "API scope notes",
-        content: "## Follow-ups\n- Seed mock users\n- Enforce subordinate read scope",
-        tags: "backend,api",
-      },
-    ]);
   }
 
   private upsertNode(data: { id: string; name: string; title: string; parentId: string | null; sortOrder: number }) {
@@ -197,45 +141,5 @@ export class UsersService implements OnModuleInit {
       },
       create: data,
     });
-  }
-
-  private async seedWorkRecords(records: Array<{ nodeId: string; title: string; details: string; priority: "low" | "normal" | "high" | "urgent"; complete?: boolean }>) {
-    for (const record of records) {
-      const existing = await this.prisma.task.findFirst({
-        where: { ownerNodeId: record.nodeId, title: record.title },
-      });
-      if (existing) continue;
-      await this.prisma.task.create({
-        data: {
-          id: createId("task"),
-          ownerNodeId: record.nodeId,
-          title: record.title,
-          details: record.details,
-          priority: record.priority,
-          dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-          status: record.complete ? "complete" : "open",
-          completedAt: record.complete ? new Date() : null,
-        },
-      });
-    }
-  }
-
-  private async seedNotes(records: Array<{ nodeId: string; title: string; content: string; tags: string }>) {
-    for (const record of records) {
-      const existing = await this.prisma.meetingNote.findFirst({
-        where: { ownerNodeId: record.nodeId, title: record.title },
-      });
-      if (existing) continue;
-      await this.prisma.meetingNote.create({
-        data: {
-          id: createId("note"),
-          ownerNodeId: record.nodeId,
-          title: record.title,
-          date: new Date(),
-          content: record.content,
-          tags: record.tags,
-        },
-      });
-    }
   }
 }

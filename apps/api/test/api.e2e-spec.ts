@@ -1,7 +1,7 @@
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PrismaClient } from "@prisma/client";
-import { mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import request from "supertest";
 import { AppModule } from "../src/app.module";
@@ -13,12 +13,19 @@ describe("Mira Nest API", () => {
   let token: string;
   const apiRoot = join(__dirname, "..");
   const dbPath = join(apiRoot, "tmp", "test.sqlite");
+  const wikiRoot = join(apiRoot, "tmp", "wiki");
+  const workspaceRoot = join(apiRoot, "tmp", "workspace");
 
   beforeAll(async () => {
     mkdirSync(join(apiRoot, "tmp"), { recursive: true });
     rmSync(dbPath, { force: true });
+    rmSync(wikiRoot, { force: true, recursive: true });
+    rmSync(workspaceRoot, { force: true, recursive: true });
+    cpSync(join(apiRoot, "resources", "workspace"), workspaceRoot, { recursive: true });
     process.env.MIRA_DATABASE_URL = `file:${dbPath}`;
     process.env.DATABASE_URL = `file:${dbPath}`;
+    process.env.MIRA_WIKI_ROOT = wikiRoot;
+    process.env.MIRA_WORKSPACE_ROOT = workspaceRoot;
     process.env.MIRA_SUPERUSER_EMAIL = "admin@example.com";
     process.env.MIRA_SUPERUSER_PASSWORD = "password123";
     process.env.MIRA_JWT_SECRET = "test-secret";
@@ -39,6 +46,8 @@ describe("Mira Nest API", () => {
   afterAll(async () => {
     await app?.close();
     rmSync(dbPath, { force: true });
+    rmSync(wikiRoot, { force: true, recursive: true });
+    rmSync(workspaceRoot, { force: true, recursive: true });
   });
 
   afterEach(() => {
@@ -49,9 +58,11 @@ describe("Mira Nest API", () => {
     delete process.env.MIRA_AI_MODEL;
     delete process.env.MIRA_AI_TIMEOUT_MS;
     delete process.env.MIRA_AI_PROXY;
+    process.env.MIRA_WIKI_ROOT = wikiRoot;
+    process.env.MIRA_WORKSPACE_ROOT = workspaceRoot;
   });
 
-  it("logs in with the seeded superuser", async () => {
+  it("logs in with the initial superuser", async () => {
     const response = await request(app.getHttpServer())
       .post("/auth/login")
       .send({ email: "admin@example.com", password: "password123" })
@@ -93,6 +104,12 @@ describe("Mira Nest API", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ ownerNodeId: child.id, title: "Planning", date: new Date().toISOString(), content: "Team mode", tags: "planning,api" })
       .expect(201);
+    expect(readFileSync(join(workspaceRoot, "people", "frontend", "tasks.md"), "utf8")).toContain("Ship API");
+    const frontendNotesDir = join(workspaceRoot, "people", "frontend", "notes");
+    expect(existsSync(frontendNotesDir)).toBe(true);
+    const noteFiles = readdirSync(frontendNotesDir).filter((file) => file.endsWith(".md"));
+    expect(noteFiles).toHaveLength(1);
+    expect(readFileSync(join(frontendNotesDir, noteFiles[0]), "utf8")).toContain("Team mode");
 
     const self = await request(app.getHttpServer()).get(`/tasks?nodeId=${root.id}&scope=self`).set("Authorization", `Bearer ${token}`).expect(200);
     expect(self.body).toHaveLength(0);
@@ -147,8 +164,8 @@ describe("Mira Nest API", () => {
     expect(alexLogin.body.user.canViewTeam).toBe(false);
 
     const managerWork = await request(app.getHttpServer()).get("/me/work?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
-    expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).toContain("Review team roadmap");
-    expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).not.toContain("Polish dashboard layout");
+    expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).toContain("Review onboarding wiki scope");
+    expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).not.toContain("Polish LLM Wiki console states");
 
     await request(app.getHttpServer())
       .post("/me/notes")
@@ -167,14 +184,34 @@ describe("Mira Nest API", () => {
 
     const managerTeam = await request(app.getHttpServer()).get("/me/team-view?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
     const teamTitles = managerTeam.body.tasks.map((task: { title: string }) => task.title);
-    expect(teamTitles).toContain("Polish dashboard layout");
-    expect(teamTitles).toContain("Add scoped API tests");
-    expect(teamTitles).not.toContain("Review team roadmap");
+    expect(teamTitles).toContain("Polish LLM Wiki console states");
+    expect(teamTitles).toContain("Validate vault path traversal guards");
+    expect(teamTitles).not.toContain("Review onboarding wiki scope");
+
+    const emptyWiki = await request(app.getHttpServer())
+      .get("/me/llm-wiki")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    expect(emptyWiki.body.index).toContain("# Index");
+    expect(emptyWiki.body.sources).toEqual([]);
 
     await request(app.getHttpServer())
-      .post("/me/ai-summary")
+      .post("/me/llm-wiki/sources")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ mode: "personal", language: "en" })
+      .send({ filename: "roadmap.pdf", content: "wrong extension" })
+      .expect(400);
+
+    const source = await request(app.getHttpServer())
+      .post("/me/llm-wiki/sources")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ filename: "roadmap.md", content: "# Roadmap source\n\nPersistent wiki source only." })
+      .expect(201);
+    expect(source.body.path).toBe("raw/roadmap.md");
+
+    await request(app.getHttpServer())
+      .post("/me/llm-wiki/ingest")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ sourcePath: source.body.path, language: "en" })
       .expect(503);
 
     process.env.MIRA_AI_PROVIDER = "openai";
@@ -189,46 +226,72 @@ describe("Mira Nest API", () => {
         choices: [{
           message: {
             content: JSON.stringify({
-              accomplishments: { title: "Accomplishments", items: ["Finished focused work."] },
-              workStyle: { title: "Work style", items: ["Uses written planning evidence."] },
-              recommendations: { title: "Recommendations", items: ["Keep clarifying owners."] },
-              risks: { title: "Risks", items: ["Watch overdue work."] },
-              evidence: { title: "Evidence", items: ["Weekly task and note records."] },
+              summary: "Roadmap source ingested.",
+              files: [
+                { path: "index.md", content: "# Index\n\n- [[Roadmap]]: Persistent wiki source." },
+                { path: "pages/roadmap.md", content: "# Roadmap\n\nPersistent wiki source." },
+              ],
+              logEntry: "ingest | roadmap.md",
             }),
           },
         }],
       }),
     } as Response);
 
-    const personalSummary = await request(app.getHttpServer())
-      .post("/me/ai-summary")
+    const ingest = await request(app.getHttpServer())
+      .post("/me/llm-wiki/ingest")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ mode: "personal", language: "en" })
+      .send({ sourcePath: source.body.path, language: "en" })
       .expect(201);
-    expect(personalSummary.body.sections.accomplishments.items[0]).toBe("Finished focused work.");
+    expect(ingest.body.summary).toBe("Roadmap source ingested.");
+    expect(ingest.body.writtenPages).toContain("pages/roadmap.md");
     let aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
     expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("https://ai.example/v1/chat/completions");
     expect(aiBody.model).toBe("test-model");
-    expect(aiBody.messages[1].content).toContain("Review team roadmap");
-    expect(aiBody.messages[1].content).not.toContain("Polish dashboard layout");
+    expect(aiBody.messages[1].content).toContain("Persistent wiki source only.");
+    expect(aiBody.messages[1].content).not.toContain("Polish LLM Wiki console states");
 
-    const alexSummary = await request(app.getHttpServer())
-      .post("/me/ai-summary")
+    const page = await request(app.getHttpServer())
+      .get("/me/llm-wiki/pages?path=pages%2Froadmap.md")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ mode: "team", targetNodeId: "node_alex", targetScope: "person", language: "en" })
+      .expect(200);
+    expect(page.body.content).toContain("# Roadmap");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              answer: "The wiki says the roadmap source is persistent.",
+              files: [
+                { path: "index.md", content: "# Index\n\n- [[Roadmap]]: Persistent wiki source.\n- [[Roadmap Answer]]: Saved answer." },
+                { path: "pages/roadmap-answer.md", content: "# Roadmap Answer\n\nThe roadmap source is persistent." },
+              ],
+              logEntry: "query | roadmap persistence",
+            }),
+          },
+        }],
+      }),
+    } as Response);
+
+    const wikiAnswer = await request(app.getHttpServer())
+      .post("/me/llm-wiki/query")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ question: "What does the roadmap source say?", language: "en", saveAsPage: true })
       .expect(201);
-    expect(alexSummary.body.target.name).toBe("Alex Chen");
-    expect(alexSummary.body.target.scope).toBe("person");
+    expect(wikiAnswer.body.answer).toContain("persistent");
+    expect(wikiAnswer.body.savedPage).toBe("pages/roadmap-answer.md");
     aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(aiBody.messages[1].content).toContain("Polish dashboard layout");
-    expect(aiBody.messages[1].content).not.toContain("Add scoped API tests");
+    expect(aiBody.messages[1].content).toContain("# Roadmap");
+
+    await request(app.getHttpServer())
+      .get("/me/llm-wiki/pages?path=..%2Fsecret.md")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(400);
 
     await request(app.getHttpServer()).get("/me/team-view?period=monthly").set("Authorization", `Bearer ${alexToken}`).expect(403);
-    await request(app.getHttpServer())
-      .post("/me/ai-summary")
-      .set("Authorization", `Bearer ${alexToken}`)
-      .send({ mode: "team", targetNodeId: "node_sam", targetScope: "person", language: "en" })
-      .expect(403);
     await request(app.getHttpServer()).get("/tasks").set("Authorization", `Bearer ${managerToken}`).expect(403);
   });
 });
@@ -266,34 +329,6 @@ async function createTestSchema(dbPath: string) {
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL,
       CONSTRAINT TeamNode_parentId_fkey FOREIGN KEY (parentId) REFERENCES TeamNode (id) ON DELETE SET NULL ON UPDATE CASCADE
-    )
-  `);
-  await client.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS Task (
-      id TEXT NOT NULL PRIMARY KEY,
-      ownerNodeId TEXT NOT NULL,
-      title TEXT NOT NULL,
-      details TEXT NOT NULL DEFAULT '',
-      status TEXT NOT NULL DEFAULT 'open',
-      priority TEXT NOT NULL DEFAULT 'normal',
-      dueDate DATETIME,
-      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      completedAt DATETIME,
-      updatedAt DATETIME NOT NULL,
-      CONSTRAINT Task_ownerNodeId_fkey FOREIGN KEY (ownerNodeId) REFERENCES TeamNode (id) ON DELETE RESTRICT ON UPDATE CASCADE
-    )
-  `);
-  await client.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS MeetingNote (
-      id TEXT NOT NULL PRIMARY KEY,
-      ownerNodeId TEXT NOT NULL,
-      title TEXT NOT NULL,
-      date DATETIME NOT NULL,
-      content TEXT NOT NULL DEFAULT '',
-      tags TEXT NOT NULL DEFAULT '',
-      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME NOT NULL,
-      CONSTRAINT MeetingNote_ownerNodeId_fkey FOREIGN KEY (ownerNodeId) REFERENCES TeamNode (id) ON DELETE RESTRICT ON UPDATE CASCADE
     )
   `);
   await client.$disconnect();

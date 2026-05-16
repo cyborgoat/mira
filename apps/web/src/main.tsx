@@ -33,7 +33,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import i18n from "./i18n";
 import "./styles.css";
 
-type Route = "dashboard" | "tasks" | "notes" | "stats" | "ai-summary" | "settings";
+type Route = "dashboard" | "tasks" | "notes" | "stats" | "llm-wiki" | "settings";
 type ViewMode = "personal" | "team";
 type TaskStatus = "open" | "complete";
 type TaskPriority = "low" | "normal" | "high" | "urgent";
@@ -98,15 +98,50 @@ type WorkspaceExport = {
   notes: MeetingNote[];
 };
 
-type AiSummaryResult = {
-  target: { nodeId: string; name: string; title: string | null; scope: "person" | "subtree" };
-  generatedAt: string;
-  sections: Record<"accomplishments" | "workStyle" | "recommendations" | "risks" | "evidence", { title: string; items: string[] }>;
-  sourceStats: {
-    weekly: { totalTasks: number; completedTasks: number; openTasks: number; notes: number; completionRate: number };
-    monthly: { totalTasks: number; completedTasks: number; openTasks: number; notes: number; completionRate: number };
-    historical: { totalTasks: number; completedTasks: number; openTasks: number; notes: number; completionRate: number };
-  };
+type LlmWikiSource = {
+  path: string;
+  filename: string;
+  size: number;
+  updatedAt: string;
+};
+
+type LlmWikiPage = {
+  path: string;
+  title: string;
+  size: number;
+  updatedAt: string;
+};
+
+type LlmWikiOverview = {
+  sources: LlmWikiSource[];
+  pages: LlmWikiPage[];
+  index: string;
+  log: string;
+};
+
+type LlmWikiQueryResult = {
+  answer: string;
+  savedPage?: string;
+  writtenPages: string[];
+  logEntry?: string;
+};
+
+type LlmWikiIngestResult = {
+  sourcePath: string;
+  summary: string;
+  writtenPages: string[];
+  logEntry?: string;
+};
+
+type LlmWikiLintResult = {
+  findings: string[];
+  notes: string;
+  logEntry?: string;
+};
+
+type LlmWikiPageContent = {
+  path: string;
+  content: string;
 };
 
 const API_URL = import.meta.env.VITE_MIRA_API_URL ?? "http://127.0.0.1:8000";
@@ -117,7 +152,7 @@ const nav: Array<{ key: Route; icon: React.ComponentType<{ size?: number }> }> =
   { key: "tasks", icon: ListChecks },
   { key: "notes", icon: FileText },
   { key: "stats", icon: BarChart3 },
-  { key: "ai-summary", icon: Sparkles },
+  { key: "llm-wiki", icon: Sparkles },
   { key: "settings", icon: Settings },
 ];
 
@@ -236,12 +271,14 @@ function App() {
           />
         )}
         {route === "stats" && <StatsView view={activeView} period={period} nodes={api.teamNodes} showOwners={viewMode === "team"} />}
-        {route === "ai-summary" && (
-          <AiSummaryView
-            mode={viewMode}
-            nodes={api.teamNodes}
-            teamView={api.teamView}
-            onGenerate={api.generateAiSummary}
+        {route === "llm-wiki" && (
+          <LlmWikiView
+            onLoad={api.loadLlmWiki}
+            onUpload={api.uploadLlmWikiSource}
+            onIngest={api.ingestLlmWikiSource}
+            onQuery={api.queryLlmWiki}
+            onLint={api.lintLlmWiki}
+            onReadPage={api.readLlmWikiPage}
           />
         )}
         {route === "settings" && (
@@ -284,7 +321,7 @@ function LoginScreen({ onLogin, error, loading }: { onLogin: (email: string, pas
         </div>
         <div>
           <h1>{t("login.title")}</h1>
-          <p className="muted">{t("login.mockUsers")}</p>
+          <p className="muted">{t("login.demoAccounts")}</p>
         </div>
         {error && <div className="form-error">{error}</div>}
         <form className="stack" onSubmit={submit}>
@@ -714,43 +751,59 @@ function AchievementsView({ tasks, notes }: { tasks: Task[]; notes: MeetingNote[
   );
 }
 
-function AiSummaryView({
-  mode,
-  nodes,
-  teamView,
-  onGenerate,
+function LlmWikiView({
+  onLoad,
+  onUpload,
+  onIngest,
+  onQuery,
+  onLint,
+  onReadPage,
 }: {
-  mode: ViewMode;
-  nodes: TeamNode[];
-  teamView: WorkView | null;
-  onGenerate: (payload: { mode: ViewMode; targetNodeId?: string; targetScope?: "person" | "subtree"; language: "en" | "zh" }) => Promise<AiSummaryResult>;
+  onLoad: () => Promise<LlmWikiOverview>;
+  onUpload: (payload: { filename: string; content: string }) => Promise<LlmWikiSource>;
+  onIngest: (payload: { sourcePath: string; language: "en" | "zh" }) => Promise<LlmWikiIngestResult>;
+  onQuery: (payload: { question: string; language: "en" | "zh"; saveAsPage?: boolean }) => Promise<LlmWikiQueryResult>;
+  onLint: (payload: { language: "en" | "zh" }) => Promise<LlmWikiLintResult>;
+  onReadPage: (path: string) => Promise<LlmWikiPageContent>;
 }) {
   const { t, i18n: i18nInstance } = useTranslation();
-  const [targetNodeId, setTargetNodeId] = useState("");
-  const [targetScope, setTargetScope] = useState<"person" | "subtree">("person");
-  const [summary, setSummary] = useState<AiSummaryResult | null>(null);
+  const [overview, setOverview] = useState<LlmWikiOverview | null>(null);
+  const [selectedSource, setSelectedSource] = useState("");
+  const [selectedPage, setSelectedPage] = useState("index.md");
+  const [pageContent, setPageContent] = useState("");
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [saveAsPage, setSaveAsPage] = useState(false);
+  const [lintResult, setLintResult] = useState<LlmWikiLintResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const targetIds = mode === "team" ? (teamView?.descendantIds ?? []) : [];
-  const targets = nodes.filter((node) => targetIds.includes(node.id));
+  const language = i18nInstance.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
+
+  const refresh = async () => {
+    const next = await onLoad();
+    setOverview(next);
+    setPageContent(selectedPage === "log.md" ? next.log : selectedPage === "index.md" ? next.index : pageContent);
+    if (!selectedSource && next.sources[0]) setSelectedSource(next.sources[0].path);
+    return next;
+  };
 
   useEffect(() => {
-    if (mode !== "team") return;
-    if (!targetNodeId || !targetIds.includes(targetNodeId)) setTargetNodeId(targetIds[0] ?? "");
-  }, [mode, targetIds.join("|"), targetNodeId]);
+    void refresh().catch((err) => setError(errorMessage(err)));
+  }, []);
 
-  const generate = async () => {
+  const uploadSource = async (file: File | undefined) => {
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".md") && !name.endsWith(".markdown") && !name.endsWith(".txt")) {
+      setError(t("llmWiki.uploadError"));
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const language = i18nInstance.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
-      const result = await onGenerate({
-        mode,
-        language,
-        targetNodeId: mode === "team" ? targetNodeId : undefined,
-        targetScope: mode === "team" ? targetScope : undefined,
-      });
-      setSummary(result);
+      const uploaded = await onUpload({ filename: file.name, content: await file.text() });
+      setSelectedSource(uploaded.path);
+      await refresh();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -758,71 +811,215 @@ function AiSummaryView({
     }
   };
 
-  const disabled = loading || (mode === "team" && !targetNodeId);
+  const ingestSource = async () => {
+    if (!selectedSource) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await onIngest({ sourcePath: selectedSource, language });
+      setAnswer(result.summary);
+      const next = await refresh();
+      const writtenPage = result.writtenPages.find((path) => path.startsWith("pages/"));
+      if (writtenPage) {
+        setSelectedPage(writtenPage);
+        setPageContent((await onReadPage(writtenPage)).content);
+      } else {
+        setSelectedPage("index.md");
+        setPageContent(next.index);
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const askWiki = async () => {
+    const cleanQuestion = question.trim();
+    if (!cleanQuestion) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await onQuery({ question: cleanQuestion, language, saveAsPage });
+      setAnswer(result.answer);
+      await refresh();
+      if (result.savedPage) await openPage(result.savedPage);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runLint = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await onLint({ language });
+      setLintResult(result);
+      await refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openPage = async (path: string) => {
+    setSelectedPage(path);
+    if (path === "index.md") {
+      setPageContent(overview?.index ?? "");
+      return;
+    }
+    if (path === "log.md") {
+      setPageContent(overview?.log ?? "");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const page = await onReadPage(path);
+      setPageContent(page.content);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="stack">
-      <Card className="stack ai-control-panel">
+    <div className="stack llm-wiki-shell">
+      <Card className="stack llm-wiki-panel">
         <div className="panel-heading">
           <div>
-            <h2>{t("ai.title")}</h2>
-            <p className="muted">{mode === "team" ? t("ai.teamHelp") : t("ai.personalHelp")}</p>
+            <h2>{t("llmWiki.title")}</h2>
+            <p className="muted">{t("llmWiki.help")}</p>
           </div>
-          <Badge>{mode === "team" ? t("mode.team") : t("mode.personal")}</Badge>
+          <Badge>{t("common.private")}</Badge>
         </div>
-        {mode === "team" && (
-          <div className="ai-controls">
-            <Select value={targetNodeId} onValueChange={setTargetNodeId}>
-              <SelectTrigger><SelectValue placeholder={t("ai.targetPlaceholder")} /></SelectTrigger>
+
+        <div className="llm-wiki-actions">
+          <label className="stack">
+            <span>{t("llmWiki.uploadSource")}</span>
+            <Input
+              type="file"
+              accept=".md,.markdown,.txt,text/markdown,text/plain"
+              onChange={(event) => {
+                const input = event.currentTarget;
+                void uploadSource(input.files?.[0]).finally(() => { input.value = ""; });
+              }}
+            />
+          </label>
+          <label className="stack">
+            <span>{t("llmWiki.source")}</span>
+            <Select value={selectedSource} onValueChange={setSelectedSource}>
+              <SelectTrigger><SelectValue placeholder={t("llmWiki.noSource")} /></SelectTrigger>
               <SelectContent>
-                {targets.map((node) => (
-                  <SelectItem value={node.id} key={node.id}>{nodePath(nodes, node)}</SelectItem>
+                {(overview?.sources ?? []).map((source) => (
+                  <SelectItem value={source.path} key={source.path}>{source.filename}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Select value={targetScope} onValueChange={(value) => setTargetScope(value as "person" | "subtree")}>
-              <SelectTrigger><SelectValue placeholder={t("ai.scope")} /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="person">{t("ai.person")}</SelectItem>
-                <SelectItem value="subtree">{t("ai.subtree")}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-        <div className="row-between">
-          <span className="muted">{t("ai.sourceHelp")}</span>
-          <Button type="button" disabled={disabled} onClick={generate}>
-            <Sparkles size={15} /> {loading ? t("ai.generating") : t("ai.generate")}
+          </label>
+          <Button type="button" disabled={loading || !selectedSource} onClick={ingestSource}>
+            <Upload size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.ingest")}
           </Button>
+        </div>
+
+        <div className="stack">
+          <Textarea className="compact" value={question} placeholder={t("llmWiki.questionPlaceholder")} onChange={(event) => setQuestion(event.target.value)} />
+          <div className="row-between">
+            <label className="inline-check">
+              <Checkbox checked={saveAsPage} onCheckedChange={(checked) => setSaveAsPage(checked === true)} />
+              <span>{t("llmWiki.saveAsPage")}</span>
+            </label>
+            <div className="cluster">
+              <Button type="button" variant="secondary" disabled={loading} onClick={runLint}>
+                <ListChecks size={15} /> {t("llmWiki.lint")}
+              </Button>
+              <Button type="button" disabled={loading || !question.trim()} onClick={askWiki}>
+                <Search size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.ask")}
+              </Button>
+            </div>
+          </div>
         </div>
         {error && <div className="form-error">{error}</div>}
       </Card>
 
-      {summary ? (
-        <>
-          <div className="grid three-col">
-            <Card className="metric-card"><h2>{t("ai.weekly")}</h2><div className="metric-value">{summary.sourceStats.weekly.completedTasks}</div><p className="muted">{t("stats.completedCount", { count: summary.sourceStats.weekly.completedTasks })}</p></Card>
-            <Card className="metric-card"><h2>{t("period.monthly")}</h2><div className="metric-value">{summary.sourceStats.monthly.completionRate}%</div><p className="muted">{t("stats.completion")}</p></Card>
-            <Card className="metric-card"><h2>{t("ai.historical")}</h2><div className="metric-value">{summary.sourceStats.historical.totalTasks}</div><p className="muted">{t("stats.totalTasks")}</p></Card>
+      {answer && (
+        <Card className="stack llm-wiki-panel">
+          <div className="panel-heading">
+            <h2>{t("llmWiki.answer")}</h2>
+            {saveAsPage && <Badge>{t("llmWiki.savedPage")}</Badge>}
           </div>
-          <div className="grid ai-card-grid">
-            {(["accomplishments", "workStyle", "recommendations", "risks", "evidence"] as const).map((key) => (
-              <Card className="stack ai-card" key={key}>
-                <div className="row-between">
-                  <h2>{summary.sections[key].title}</h2>
-                  {key === "workStyle" && <Badge>{summary.target.name}</Badge>}
-                </div>
-                <ul>
-                  {summary.sections[key].items.map((item) => <li key={item}>{item}</li>)}
-                  {!summary.sections[key].items.length && <li>{t("ai.noInsight")}</li>}
-                </ul>
-              </Card>
+          <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(answer) }} />
+        </Card>
+      )}
+
+      {lintResult && (
+        <Card className="stack llm-wiki-panel">
+          <h2>{t("llmWiki.health")}</h2>
+          <ul className="plain-list">
+            {lintResult.findings.map((finding) => <li key={finding}>{finding}</li>)}
+            {!lintResult.findings.length && <li>{t("llmWiki.noFindings")}</li>}
+          </ul>
+          {lintResult.notes && <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(lintResult.notes) }} />}
+        </Card>
+      )}
+
+      <div className="llm-wiki-browser">
+        <Card className="stack llm-wiki-sidebar">
+          <div className="panel-heading">
+            <h2>{t("llmWiki.sources")}</h2>
+            <Badge>{overview?.sources.length ?? 0}</Badge>
+          </div>
+          <div className="wiki-list">
+            {(overview?.sources ?? []).map((source) => (
+              <button type="button" key={source.path} className={source.path === selectedSource ? "active" : ""} onClick={() => setSelectedSource(source.path)}>
+                <strong>{source.filename}</strong>
+                <span>{formatBytes(source.size)}</span>
+              </button>
+            ))}
+            {overview && !overview.sources.length && <span className="muted">{t("llmWiki.noSource")}</span>}
+          </div>
+
+          <div className="panel-heading">
+            <h2>{t("llmWiki.pages")}</h2>
+            <Badge>{overview?.pages.length ?? 0}</Badge>
+          </div>
+          <div className="wiki-list">
+            <button type="button" className={selectedPage === "index.md" ? "active" : ""} onClick={() => void openPage("index.md")}>
+              <strong>index.md</strong>
+              <span>{t("llmWiki.index")}</span>
+            </button>
+            <button type="button" className={selectedPage === "log.md" ? "active" : ""} onClick={() => void openPage("log.md")}>
+              <strong>log.md</strong>
+              <span>{t("llmWiki.log")}</span>
+            </button>
+            {(overview?.pages ?? []).map((page) => (
+              <button type="button" key={page.path} className={page.path === selectedPage ? "active" : ""} onClick={() => void openPage(page.path)}>
+                <strong>{page.title}</strong>
+                <span>{page.path}</span>
+              </button>
             ))}
           </div>
-        </>
-      ) : (
-        <EmptyState title={t("ai.emptyTitle")} text={t("ai.emptyText")} actionLabel={disabled ? undefined : t("ai.generate")} onAction={generate} />
-      )}
+        </Card>
+
+        <Card className="stack llm-wiki-reader">
+          <div className="panel-heading">
+            <div>
+              <h2>{selectedPage}</h2>
+              <p className="muted">{t("llmWiki.markdownPreview")}</p>
+            </div>
+            <Badge>{t("llmWiki.markdown")}</Badge>
+          </div>
+          {pageContent ? (
+            <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(pageContent) }} />
+          ) : (
+            <EmptyState title={t("llmWiki.emptyTitle")} text={t("llmWiki.emptyText")} />
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1340,8 +1537,17 @@ function useMiraApi() {
     },
     updateNote: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) => mutate(() => request(`/me/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteNote: (id: string) => mutate(() => request(`/me/notes/${id}`, { method: "DELETE" })),
-    generateAiSummary: (payload: { mode: ViewMode; targetNodeId?: string; targetScope?: "person" | "subtree"; language: "en" | "zh" }) =>
-      request<AiSummaryResult>("/me/ai-summary", { method: "POST", body: JSON.stringify(payload) }),
+    loadLlmWiki: () => request<LlmWikiOverview>("/me/llm-wiki"),
+    uploadLlmWikiSource: (payload: { filename: string; content: string }) =>
+      request<LlmWikiSource>("/me/llm-wiki/sources", { method: "POST", body: JSON.stringify(payload) }),
+    ingestLlmWikiSource: (payload: { sourcePath: string; language: "en" | "zh" }) =>
+      request<LlmWikiIngestResult>("/me/llm-wiki/ingest", { method: "POST", body: JSON.stringify(payload) }),
+    queryLlmWiki: (payload: { question: string; language: "en" | "zh"; saveAsPage?: boolean }) =>
+      request<LlmWikiQueryResult>("/me/llm-wiki/query", { method: "POST", body: JSON.stringify(payload) }),
+    lintLlmWiki: (payload: { language: "en" | "zh" }) =>
+      request<LlmWikiLintResult>("/me/llm-wiki/lint", { method: "POST", body: JSON.stringify(payload) }),
+    readLlmWikiPage: (path: string) =>
+      request<LlmWikiPageContent>(`/me/llm-wiki/pages?path=${encodeURIComponent(path)}`),
     createTeamNode: (payload: { name: string; title?: string; parentId?: string }) => mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
     updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteTeamNode: (id: string) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),
@@ -1410,6 +1616,12 @@ function nodeLabel(nodes: TeamNode[], id: string) {
 
 function formatDate(dateValue: string) {
   return new Intl.DateTimeFormat(i18n.language === "zh" ? "zh-CN" : undefined, { month: "short", day: "numeric" }).format(new Date(dateValue));
+}
+
+function formatBytes(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 102.4) / 10} KB`;
+  return `${Math.round(value / 104857.6) / 10} MB`;
 }
 
 function toDateInput(dateValue: string) {

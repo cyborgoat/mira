@@ -33,55 +33,7 @@ model TeamNode {
   parent    TeamNode?  @relation("TeamNodeChildren", fields: [parentId], references: [id])
   children  TeamNode[] @relation("TeamNodeChildren")
   users     User[]
-  tasks     Task[]
-  notes     MeetingNote[]
 
   @@index([parentId, sortOrder])
   @@index([active])
-}
-
-model Task {
-  id          String     @id
-  ownerNodeId String
-  title       String
-  details     String     @default("")
-  status      TaskStatus @default(open)
-  priority    TaskPriority @default(normal)
-  dueDate     DateTime?
-  createdAt   DateTime   @default(now())
-  completedAt DateTime?
-  updatedAt   DateTime   @updatedAt
-  owner       TeamNode   @relation(fields: [ownerNodeId], references: [id])
-
-  @@index([ownerNodeId, status])
-  @@index([priority])
-  @@index([dueDate])
-  @@index([createdAt])
-  @@index([completedAt])
-}
-
-model MeetingNote {
-  id          String   @id
-  ownerNodeId String
-  title       String
-  date        DateTime
-  content     String   @default("")
-  tags        String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  owner       TeamNode @relation(fields: [ownerNodeId], references: [id])
-
-  @@index([ownerNodeId, date])
-}
-
-enum TaskStatus {
-  open
-  complete
-}
-
-enum TaskPriority {
-  low
-  normal
-  high
-  urgent
 }

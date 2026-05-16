@@ -3,11 +3,15 @@ import { Prisma, TeamNode } from "@prisma/client";
 import { createId } from "../common/ids";
 import { periodStart, Period } from "../common/period";
 import { PrismaService } from "../prisma/prisma.service";
+import { WorkspaceContentService } from "../workspace-content/workspace-content.service";
 import { CreateTeamNodeDto, UpdateTeamNodeDto } from "./dto/team-node.dto";
 
 @Injectable()
 export class TeamService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly content: WorkspaceContentService,
+  ) {}
 
   listTree() {
     return this.prisma.teamNode.findMany({
@@ -77,20 +81,12 @@ export class TeamService {
 
     const descendantIds = [selectedNode.id, ...(await this.descendantIds(selectedNode.id))];
     const start = periodStart(period);
-    const tasks = await this.prisma.task.findMany({
-      where: {
-        ownerNodeId: { in: descendantIds },
-        OR: [{ createdAt: { gte: start } }, { completedAt: { gte: start } }],
-      },
-      orderBy: { updatedAt: "desc" },
+    const tasks = (await this.content.listTasks({ nodeIds: descendantIds })).filter((task) => {
+      const createdAt = new Date(task.createdAt);
+      const completedAt = task.completedAt ? new Date(task.completedAt) : null;
+      return createdAt >= start || Boolean(completedAt && completedAt >= start);
     });
-    const notes = await this.prisma.meetingNote.findMany({
-      where: {
-        ownerNodeId: { in: descendantIds },
-        date: { gte: start },
-      },
-      orderBy: { updatedAt: "desc" },
-    });
+    const notes = (await this.content.listNotes({ nodeIds: descendantIds })).filter((note) => new Date(note.date) >= start);
     const completedTasks = tasks.filter((task) => task.status === "complete").length;
 
     return {

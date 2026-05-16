@@ -1,22 +1,54 @@
-import { BadGatewayException, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { BadGatewayException, BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { appendFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import * as https from "node:https";
 import * as net from "node:net";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import * as tls from "node:tls";
 
-export type AiLanguage = "en" | "zh";
+export type LlmWikiLanguage = "en" | "zh";
 
-export type AiSummarySection = {
-  title: string;
-  items: string[];
+export type LlmWikiSource = {
+  path: string;
+  filename: string;
+  size: number;
+  updatedAt: string;
 };
 
-export type AiSummary = {
-  accomplishments: AiSummarySection;
-  workStyle: AiSummarySection;
-  recommendations: AiSummarySection;
-  risks: AiSummarySection;
-  evidence: AiSummarySection;
+export type LlmWikiPage = {
+  path: string;
+  title: string;
+  size: number;
+  updatedAt: string;
+};
+
+export type LlmWikiOverview = {
+  sources: LlmWikiSource[];
+  pages: LlmWikiPage[];
+  index: string;
+  log: string;
+};
+
+export type LlmWikiQueryResult = {
+  answer: string;
+  savedPage?: string;
+  writtenPages: string[];
+  logEntry?: string;
+};
+
+export type LlmWikiIngestResult = {
+  sourcePath: string;
+  summary: string;
+  writtenPages: string[];
+  logEntry?: string;
+};
+
+export type LlmWikiLintResult = {
+  findings: string[];
+  notes: string;
+  logEntry?: string;
 };
 
 type Provider = "openai" | "openrouter" | "anthropic" | "custom-openai-compatible";
@@ -30,20 +62,355 @@ type OpenAiCompatibleChoice = {
   };
 };
 
+type WikiFileInstruction = {
+  path?: unknown;
+  content?: unknown;
+};
+
 @Injectable()
 export class AiService {
   constructor(private readonly config: ConfigService) {}
 
-  async summarize(payload: { language: AiLanguage; prompt: string }): Promise<AiSummary> {
+  async wikiOverview(userId: string): Promise<LlmWikiOverview> {
+    const vault = await this.ensureVault(userId);
+    const [sources, pages, index, log] = await Promise.all([
+      this.listSources(vault.rawDir),
+      this.listPages(vault.wikiDir),
+      this.readOptional(join(vault.wikiDir, "index.md")),
+      this.readOptional(join(vault.wikiDir, "log.md")),
+    ]);
+    return { sources, pages, index, log: this.tailLog(log) };
+  }
+
+  async uploadWikiSource(userId: string, payload: { filename: string; content: string }): Promise<LlmWikiSource> {
+    const vault = await this.ensureVault(userId);
+    const filename = this.safeSourceFilename(payload.filename);
+    const content = typeof payload.content === "string" ? payload.content : "";
+    const maxBytes = Number(this.config.get<string>("MIRA_WIKI_MAX_SOURCE_BYTES", "1000000")) || 1000000;
+    if (!content.trim()) throw new BadRequestException("Source content is required");
+    if (Buffer.byteLength(content, "utf8") > maxBytes) throw new BadRequestException("Source file is too large");
+
+    const finalName = await this.uniqueFilename(vault.rawDir, filename);
+    const filePath = join(vault.rawDir, finalName);
+    await writeFile(filePath, content, "utf8");
+    const info = await stat(filePath);
+    await this.appendLog(vault.wikiDir, `source | Uploaded ${finalName}`);
+    return {
+      path: `raw/${finalName}`,
+      filename: finalName,
+      size: info.size,
+      updatedAt: info.mtime.toISOString(),
+    };
+  }
+
+  async ingestWikiSource(userId: string, payload: { sourcePath: string; language: LlmWikiLanguage }): Promise<LlmWikiIngestResult> {
+    const vault = await this.ensureVault(userId);
+    const sourceFile = this.resolveRawPath(vault.rawDir, payload.sourcePath);
+    if (!existsSync(sourceFile)) throw new NotFoundException("Source file not found");
+    const sourceContent = await this.readLimited(sourceFile, this.sourcePromptChars());
+    const context = await this.wikiContext(vault.wikiDir);
+
+    const parsed = await this.completeJson(this.wikiJsonSystem(), [
+      this.languageLine(payload.language),
+      "Ingest the raw source into the persistent markdown wiki.",
+      "Create or update durable wiki pages. Update index.md. Do not include hidden reasoning.",
+      "Return JSON with this shape: {\"summary\":\"string\",\"files\":[{\"path\":\"index.md or pages/name.md\",\"content\":\"markdown\"}],\"logEntry\":\"string\"}.",
+      "Do not write raw sources or log.md in files. Use Obsidian-style [[links]] where helpful.",
+      "",
+      "Existing wiki context:",
+      context,
+      "",
+      `Source path: ${payload.sourcePath}`,
+      "Source content:",
+      sourceContent,
+    ].join("\n"));
+
+    const writtenPages = await this.applyWikiFiles(vault.wikiDir, parsed.files);
+    const logEntry = this.optionalString(parsed.logEntry) || `ingest | ${payload.sourcePath}`;
+    await this.appendLog(vault.wikiDir, logEntry);
+    return {
+      sourcePath: payload.sourcePath,
+      summary: this.optionalString(parsed.summary) || "Source ingested.",
+      writtenPages,
+      logEntry,
+    };
+  }
+
+  async queryWiki(userId: string, payload: { question: string; language: LlmWikiLanguage; saveAsPage?: boolean }): Promise<LlmWikiQueryResult> {
+    const question = payload.question.trim();
+    if (!question) throw new BadRequestException("Question is required");
+
+    const vault = await this.ensureVault(userId);
+    const context = await this.wikiContext(vault.wikiDir, true);
+    const parsed = await this.completeJson(this.wikiJsonSystem(), [
+      this.languageLine(payload.language),
+      "Answer the user's question from the existing markdown wiki. Cite relevant wiki page names or source names in prose.",
+      payload.saveAsPage
+        ? "Also save the answer as a durable wiki page and update index.md."
+        : "Do not write files unless the answer must update index.md for correctness.",
+      "Return JSON with this shape: {\"answer\":\"markdown\",\"files\":[{\"path\":\"index.md or pages/name.md\",\"content\":\"markdown\"}],\"logEntry\":\"string\"}.",
+      "If saving an answer page, put it under pages/ with a concise kebab-case filename.",
+      "",
+      "Wiki context:",
+      context,
+      "",
+      `Question: ${question}`,
+    ].join("\n"));
+
+    const writtenPages = payload.saveAsPage ? await this.applyWikiFiles(vault.wikiDir, parsed.files) : [];
+    const logEntry = this.optionalString(parsed.logEntry) || `query | ${question.slice(0, 120)}`;
+    await this.appendLog(vault.wikiDir, logEntry);
+    return {
+      answer: this.optionalString(parsed.answer) || "No answer returned.",
+      savedPage: writtenPages.find((path) => path.startsWith("pages/")),
+      writtenPages,
+      logEntry,
+    };
+  }
+
+  async lintWiki(userId: string, payload: { language: LlmWikiLanguage }): Promise<LlmWikiLintResult> {
+    const vault = await this.ensureVault(userId);
+    const context = await this.wikiContext(vault.wikiDir, true);
+    const parsed = await this.completeJson(this.wikiJsonSystem(), [
+      this.languageLine(payload.language),
+      "Health-check this persistent markdown wiki.",
+      "Look for contradictions, stale claims, orphan pages, missing cross-references, missing pages for recurring concepts, and useful next sources.",
+      "Return JSON with this shape: {\"findings\":[\"string\"],\"notes\":\"markdown\",\"logEntry\":\"string\"}.",
+      "",
+      "Wiki context:",
+      context,
+    ].join("\n"));
+
+    const logEntry = this.optionalString(parsed.logEntry) || "lint | Wiki health check";
+    await this.appendLog(vault.wikiDir, logEntry);
+    return {
+      findings: Array.isArray(parsed.findings) ? parsed.findings.filter((item): item is string => typeof item === "string") : [],
+      notes: this.optionalString(parsed.notes),
+      logEntry,
+    };
+  }
+
+  async readWikiPage(userId: string, pagePath: string) {
+    const vault = await this.ensureVault(userId);
+    const filePath = this.resolveWikiPath(vault.wikiDir, pagePath);
+    if (!existsSync(filePath)) throw new NotFoundException("Wiki page not found");
+    return {
+      path: this.toPosix(relative(vault.wikiDir, filePath)),
+      content: await readFile(filePath, "utf8"),
+    };
+  }
+
+  private async ensureVault(userId: string) {
+    const safeUserId = userId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const root = resolve(this.configString("MIRA_WIKI_ROOT", resolve(process.cwd(), "data", "llm-wiki")));
+    const vaultDir = join(root, safeUserId);
+    const rawDir = join(vaultDir, "raw");
+    const wikiDir = join(vaultDir, "wiki");
+    await Promise.all([mkdir(rawDir, { recursive: true }), mkdir(join(wikiDir, "pages"), { recursive: true })]);
+    await this.ensureFile(join(wikiDir, "index.md"), "# Index\n\nNo wiki pages yet.\n");
+    await this.ensureFile(join(wikiDir, "log.md"), "# Log\n\n");
+    return { root, vaultDir, rawDir, wikiDir };
+  }
+
+  private async ensureFile(path: string, content: string) {
+    if (existsSync(path)) return;
+    await writeFile(path, content, "utf8");
+  }
+
+  private async listSources(rawDir: string): Promise<LlmWikiSource[]> {
+    const entries = await readdir(rawDir, { withFileTypes: true });
+    const files = await Promise.all(entries.filter((entry) => entry.isFile()).map(async (entry) => {
+      const path = join(rawDir, entry.name);
+      const info = await stat(path);
+      return {
+        path: `raw/${entry.name}`,
+        filename: entry.name,
+        size: info.size,
+        updatedAt: info.mtime.toISOString(),
+      };
+    }));
+    return files.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  private async listPages(wikiDir: string): Promise<LlmWikiPage[]> {
+    const files = await this.walkMarkdown(join(wikiDir, "pages"));
+    const pages = await Promise.all(files.map(async (file) => {
+      const content = await this.readLimited(file, 4000);
+      const info = await stat(file);
+      const path = this.toPosix(relative(wikiDir, file));
+      return {
+        path,
+        title: this.markdownTitle(content) || basename(file, extname(file)).replace(/[-_]+/g, " "),
+        size: info.size,
+        updatedAt: info.mtime.toISOString(),
+      };
+    }));
+    return pages.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  private async walkMarkdown(dir: string): Promise<string[]> {
+    if (!existsSync(dir)) return [];
+    const entries = await readdir(dir, { withFileTypes: true });
+    const nested = await Promise.all(entries.map(async (entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return this.walkMarkdown(path);
+      if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) return [path];
+      return [];
+    }));
+    return nested.flat();
+  }
+
+  private async wikiContext(wikiDir: string, includePages = false) {
+    const index = await this.readOptional(join(wikiDir, "index.md"));
+    const log = this.tailLog(await this.readOptional(join(wikiDir, "log.md")));
+    const pages = includePages ? await this.pageContext(wikiDir) : "";
+    return [
+      "## index.md",
+      index,
+      "## recent log.md",
+      log,
+      pages ? `## pages\n${pages}` : "",
+    ].filter(Boolean).join("\n\n").slice(0, this.contextChars());
+  }
+
+  private async pageContext(wikiDir: string) {
+    const pages = await this.listPages(wikiDir);
+    const chunks: string[] = [];
+    for (const page of pages.slice(0, 30)) {
+      const content = await this.readLimited(join(wikiDir, page.path), 6000);
+      chunks.push(`### ${page.path}\n${content}`);
+    }
+    return chunks.join("\n\n");
+  }
+
+  private async applyWikiFiles(wikiDir: string, files: unknown) {
+    if (!Array.isArray(files)) return [];
+    const written: string[] = [];
+    for (const file of files as WikiFileInstruction[]) {
+      const path = typeof file.path === "string" ? file.path : "";
+      const content = typeof file.content === "string" ? file.content : "";
+      if (!path || !content.trim()) continue;
+      const target = this.resolveWikiPath(wikiDir, path);
+      const relativePath = this.toPosix(relative(wikiDir, target));
+      if (relativePath === "log.md") continue;
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, content.endsWith("\n") ? content : `${content}\n`, "utf8");
+      written.push(relativePath);
+    }
+    return written;
+  }
+
+  private resolveRawPath(rawDir: string, input: string) {
+    const normalized = this.safeRelative(input.replace(/^raw[\\/]/, ""));
+    return this.resolveUnder(rawDir, normalized);
+  }
+
+  private resolveWikiPath(wikiDir: string, input: string) {
+    const normalized = this.safeRelative(input);
+    if (normalized !== "index.md" && normalized !== "log.md" && !normalized.startsWith(`pages${sep}`) && !normalized.startsWith("pages/")) {
+      throw new BadRequestException("Wiki path must be index.md, log.md, or pages/*.md");
+    }
+    if (!normalized.toLowerCase().endsWith(".md")) throw new BadRequestException("Wiki pages must be markdown files");
+    return this.resolveUnder(wikiDir, normalized);
+  }
+
+  private safeRelative(input: string) {
+    const value = input.replace(/\\/g, sep).replace(/\//g, sep).trim();
+    if (!value || value.includes("..") || value.startsWith(sep) || value.includes(`:${sep}`)) {
+      throw new BadRequestException("Invalid path");
+    }
+    return value;
+  }
+
+  private resolveUnder(root: string, input: string) {
+    const target = resolve(root, input);
+    const rootPath = resolve(root);
+    if (target !== rootPath && !target.startsWith(`${rootPath}${sep}`)) throw new BadRequestException("Invalid path");
+    return target;
+  }
+
+  private safeSourceFilename(filename: string) {
+    const original = basename(filename || "");
+    const extension = extname(original).toLowerCase();
+    if (![".md", ".markdown", ".txt"].includes(extension)) throw new BadRequestException("Only .md, .markdown, and .txt sources are supported");
+    const stem = basename(original, extname(original)).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "source";
+    return `${stem}${extension}`;
+  }
+
+  private async uniqueFilename(dir: string, filename: string) {
+    if (!existsSync(join(dir, filename))) return filename;
+    const extension = extname(filename);
+    const stem = basename(filename, extension);
+    return `${stem}-${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${randomUUID().slice(0, 8)}${extension}`;
+  }
+
+  private async appendLog(wikiDir: string, text: string) {
+    const entry = text.trim();
+    if (!entry) return;
+    const date = new Date().toISOString().slice(0, 10);
+    await appendFile(join(wikiDir, "log.md"), `\n## [${date}] ${entry}\n`, "utf8");
+  }
+
+  private tailLog(log: string) {
+    const entries = log.split(/\n(?=## \[)/).filter(Boolean);
+    if (entries.length <= 12) return log;
+    return [entries[0], ...entries.slice(-12)].join("\n");
+  }
+
+  private markdownTitle(content: string) {
+    return content.split(/\r?\n/).find((line) => line.startsWith("# "))?.replace(/^#\s+/, "").trim() || "";
+  }
+
+  private async readOptional(path: string) {
+    try {
+      return await readFile(path, "utf8");
+    } catch {
+      return "";
+    }
+  }
+
+  private async readLimited(path: string, chars: number) {
+    const content = await readFile(path, "utf8");
+    return content.slice(0, chars);
+  }
+
+  private sourcePromptChars() {
+    return Number(this.config.get<string>("MIRA_WIKI_SOURCE_PROMPT_CHARS", "60000")) || 60000;
+  }
+
+  private contextChars() {
+    return Number(this.config.get<string>("MIRA_WIKI_CONTEXT_CHARS", "90000")) || 90000;
+  }
+
+  private toPosix(path: string) {
+    return path.split(sep).join("/");
+  }
+
+  private languageLine(language: LlmWikiLanguage) {
+    return language === "zh" ? "Write user-facing content in Chinese." : "Write user-facing content in English.";
+  }
+
+  private optionalString(value: unknown) {
+    return typeof value === "string" ? value.trim() : "";
+  }
+
+  private async completeJson(system: string, prompt: string) {
+    const text = await this.complete(system, prompt, true);
+    const trimmed = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+    try {
+      return JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      throw new BadGatewayException("AI provider returned invalid JSON");
+    }
+  }
+
+  private async complete(system: string, prompt: string, jsonMode: boolean) {
     const provider = this.provider();
     const apiKey = this.config.get<string>("MIRA_AI_API_KEY", "").trim();
     if (!apiKey) throw new ServiceUnavailableException("AI provider is not configured");
-
-    const text = provider === "anthropic"
-      ? await this.callAnthropic(apiKey, payload.prompt)
-      : await this.callOpenAiCompatible(provider, apiKey, payload.prompt);
-
-    return this.parseSummary(text);
+    return provider === "anthropic"
+      ? this.callAnthropic(apiKey, system, prompt)
+      : this.callOpenAiCompatible(provider, apiKey, system, prompt, jsonMode);
   }
 
   private provider(): Provider {
@@ -52,9 +419,9 @@ export class AiService {
     throw new ServiceUnavailableException(`Unsupported AI provider: ${value}`);
   }
 
-  private async callOpenAiCompatible(provider: Provider, apiKey: string, prompt: string) {
+  private async callOpenAiCompatible(provider: Provider, apiKey: string, system: string, prompt: string, jsonMode: boolean) {
     const baseUrl = this.configString("MIRA_AI_BASE_URL", this.defaultBaseUrl(provider)).replace(/\/+$/, "");
-    const responseFormat = provider === "openrouter" ? {} : { response_format: { type: "json_object" } };
+    const responseFormat = jsonMode && provider !== "openrouter" ? { response_format: { type: "json_object" } } : {};
     const reasoning = provider === "openrouter" ? { reasoning: { effort: "none", exclude: true }, include_reasoning: false } : {};
     const response = await this.fetchJson(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -70,7 +437,7 @@ export class AiService {
         ...responseFormat,
         ...reasoning,
         messages: [
-          { role: "system", content: this.systemPrompt() },
+          { role: "system", content: system },
           { role: "user", content: prompt },
         ],
       }),
@@ -79,7 +446,7 @@ export class AiService {
     return this.extractOpenAiCompatibleText(response);
   }
 
-  private async callAnthropic(apiKey: string, prompt: string) {
+  private async callAnthropic(apiKey: string, system: string, prompt: string) {
     const baseUrl = this.configString("MIRA_AI_BASE_URL", "https://api.anthropic.com").replace(/\/+$/, "");
     const response = await this.fetchJson(`${baseUrl}/v1/messages`, {
       method: "POST",
@@ -90,9 +457,9 @@ export class AiService {
       },
       body: JSON.stringify({
         model: this.model("anthropic"),
-        max_tokens: 1600,
+        max_tokens: this.maxTokens(),
         temperature: 0.2,
-        system: this.systemPrompt(),
+        system,
         messages: [{ role: "user", content: prompt }],
       }),
     });
@@ -174,7 +541,7 @@ export class AiService {
       "Content-Length": Buffer.byteLength(body).toString(),
     };
 
-    return new Promise<{ ok: boolean; status: number; body: string }>((resolve, reject) => {
+    return new Promise<{ ok: boolean; status: number; body: string }>((resolvePromise, reject) => {
       const options: https.RequestOptions & { createConnection: (options: unknown, callback: (error: Error | null, socket?: net.Socket | tls.TLSSocket) => void) => net.Socket | undefined } = {
         hostname: target.hostname,
         port: Number(target.port || 443),
@@ -190,8 +557,8 @@ export class AiService {
         const chunks: Buffer[] = [];
         response.on("data", (chunk: Buffer) => chunks.push(chunk));
         response.on("end", () => {
-          const status = response.statusCode || 0;
-          resolve({ ok: status >= 200 && status < 300, status, body: Buffer.concat(chunks).toString("utf8") });
+          const statusCode = response.statusCode || 0;
+          resolvePromise({ ok: statusCode >= 200 && statusCode < 300, status: statusCode, body: Buffer.concat(chunks).toString("utf8") });
         });
       });
       request.on("error", reject);
@@ -231,8 +598,8 @@ export class AiService {
       const end = buffered.indexOf("\r\n\r\n");
       if (end === -1) return;
       const statusLine = buffered.slice(0, buffered.indexOf("\r\n"));
-      const status = Number(statusLine.split(" ")[1]);
-      if (status !== 200) return fail(new Error(`proxy CONNECT failed: ${status || "unknown"}`));
+      const statusCode = Number(statusLine.split(" ")[1]);
+      if (statusCode !== 200) return fail(new Error(`proxy CONNECT failed: ${statusCode || "unknown"}`));
       settled = true;
       proxySocket.removeAllListeners("data");
       proxySocket.removeAllListeners("error");
@@ -248,28 +615,6 @@ export class AiService {
       result[key] = value;
     });
     return result;
-  }
-
-  private parseSummary(text: string): AiSummary {
-    const trimmed = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-    try {
-      const parsed = JSON.parse(trimmed) as Partial<AiSummary>;
-      return {
-        accomplishments: this.section(parsed.accomplishments, "Accomplishments"),
-        workStyle: this.section(parsed.workStyle, "Work style"),
-        recommendations: this.section(parsed.recommendations, "Recommendations"),
-        risks: this.section(parsed.risks, "Risks"),
-        evidence: this.section(parsed.evidence, "Evidence"),
-      };
-    } catch {
-      throw new BadGatewayException("AI provider returned invalid JSON");
-    }
-  }
-
-  private section(value: unknown, fallbackTitle: string): AiSummarySection {
-    const section = value as Partial<AiSummarySection> | undefined;
-    const items = Array.isArray(section?.items) ? section.items.filter((item): item is string => typeof item === "string").slice(0, 6) : [];
-    return { title: typeof section?.title === "string" ? section.title : fallbackTitle, items };
   }
 
   private model(provider: Provider) {
@@ -328,13 +673,14 @@ export class AiService {
     throw new BadGatewayException(`AI provider returned empty final content${details ? `: ${details}` : ""}`);
   }
 
-  private systemPrompt() {
+  private wikiJsonSystem() {
     return [
-      "You are Mira's work summarizer.",
-      "Return only valid JSON.",
-      "Do not include hidden reasoning, chain-of-thought, markdown fences, or prose outside the JSON object.",
-      "Do not diagnose personality or mental state. Describe evidence-based work style only.",
-      "Use concise, specific, professional language.",
+      "You maintain Mira's personal LLM Wiki.",
+      "The wiki is a persistent, interlinked markdown knowledge base built from immutable raw sources.",
+      "Return only valid JSON in the requested schema.",
+      "Never include markdown fences or prose outside JSON.",
+      "Do not expose hidden reasoning or chain-of-thought.",
+      "Prefer concise markdown, useful [[links]], and explicit source references.",
     ].join(" ");
   }
 }

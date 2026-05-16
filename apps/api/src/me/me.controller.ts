@@ -1,12 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { TaskPriority, TaskStatus } from "@prisma/client";
 import { CurrentUser, AuthUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Period } from "../common/period";
+import { TaskPriority, TaskStatus } from "../common/workspace-types";
 import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
-import { AiSummaryDto } from "./dto/ai-summary.dto";
+import { IngestLlmWikiSourceDto, LintLlmWikiDto, QueryLlmWikiDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
 import { MeService } from "./me.service";
 
 @UseGuards(JwtAuthGuard)
@@ -40,9 +40,34 @@ export class MeController {
     return this.me.updatePassword(user, payload);
   }
 
-  @Post("ai-summary")
-  aiSummary(@CurrentUser() user: AuthUser, @Body() payload: AiSummaryDto) {
-    return this.me.aiSummary(user, payload);
+  @Get("llm-wiki")
+  llmWikiOverview(@CurrentUser() user: AuthUser) {
+    return this.me.llmWikiOverview(user);
+  }
+
+  @Post("llm-wiki/sources")
+  uploadLlmWikiSource(@CurrentUser() user: AuthUser, @Body() payload: UploadLlmWikiSourceDto) {
+    return this.me.uploadLlmWikiSource(user, payload);
+  }
+
+  @Post("llm-wiki/ingest")
+  ingestLlmWikiSource(@CurrentUser() user: AuthUser, @Body() payload: IngestLlmWikiSourceDto) {
+    return this.me.ingestLlmWikiSource(user, payload);
+  }
+
+  @Post("llm-wiki/query")
+  queryLlmWiki(@CurrentUser() user: AuthUser, @Body() payload: QueryLlmWikiDto) {
+    return this.me.queryLlmWiki(user, payload);
+  }
+
+  @Post("llm-wiki/lint")
+  lintLlmWiki(@CurrentUser() user: AuthUser, @Body() payload: LintLlmWikiDto) {
+    return this.me.lintLlmWiki(user, payload);
+  }
+
+  @Get("llm-wiki/pages")
+  readLlmWikiPage(@CurrentUser() user: AuthUser, @Query("path") path: string) {
+    return this.me.readLlmWikiPage(user, path);
   }
 
   @Post("tasks")

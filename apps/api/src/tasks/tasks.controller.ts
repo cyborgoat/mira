@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { TaskPriority, TaskStatus } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { SuperuserGuard } from "../auth/superuser.guard";
+import { TaskPriority, TaskStatus } from "../common/workspace-types";
 import { CreateTaskDto, UpdateTaskDto } from "./dto/task.dto";
 import { TasksService } from "./tasks.service";
 
