@@ -90,7 +90,7 @@ Set `VITE_MIRA_API_URL` for the web app if the API is not running on `http://127
 
 ## AI Summary Setup
 
-The AI Summarizer is configured only on the backend through `.env`. There is no frontend UI for provider or model settings.
+The AI Summarizer is configured only on the backend through `apps/api/.env`. There is no frontend UI for provider or model settings.
 
 ```text
 MIRA_AI_PROVIDER=openai

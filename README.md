@@ -95,7 +95,7 @@ The current backend slice exposes seeded auth, `/me/work` for personal data, `/m
 
 ## AI Summarizer
 
-AI provider settings live only in the backend `.env`; there is no frontend model configuration UI. Copy `.env.example` to `.env` and set:
+AI provider settings live only in `apps/api/.env`; there is no frontend model configuration UI. Copy `apps/api/.env.example` to `apps/api/.env` and set:
 
 ```text
 MIRA_AI_PROVIDER=openai
