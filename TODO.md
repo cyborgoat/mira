@@ -8,6 +8,7 @@ The active product direction is an API-backed user-centered workspace with NestJ
 - Personal mode: signed-in users only see and mutate their own tasks and notes.
 - Team view mode: users with children in the tree can inspect subordinate task stats and details in read-only mode.
 - Settings: every user can edit account details and password; superusers can create, edit, select, delete, export, import, and reset team/workspace data.
+- i18n: English and Chinese UI strings are implemented with `react-i18next`.
 - Roles: arbitrary role/title text; authority comes from the tree and the separate superuser permission.
 
 ## P0 - New Features to be implemented

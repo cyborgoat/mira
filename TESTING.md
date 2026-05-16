@@ -32,6 +32,7 @@ Check these flows:
 - sign in as `alex@mira.local` and confirm Settings only shows account and password tabs.
 - sign in as `manager@mira.local`, switch Personal/Team view, and confirm team view is read-only subordinate data.
 - sign in as `admin@mira.local` and confirm Settings adds the team tree tab and JSON workspace tools.
+- switch language between English and Chinese from login or Settings, then confirm navigation, task, note, stats, and settings labels update.
 - `#dashboard`: confirm stats and recent work change between personal and team view where available.
 - `#tasks`: add a task with priority and due date, filter it, edit it, complete it, search it, delete it.
 - `#notes`: create a tagged note, edit Markdown, save it, upload a `.md` or `.txt` file, delete a note.

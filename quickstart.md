@@ -71,7 +71,9 @@ http://localhost:5173/#stats
 http://localhost:5173/#settings
 ```
 
-Roles and titles are arbitrary text on users/team nodes. Team visibility comes from the tree: a user with children can switch to read-only team view, and team tree administration comes from the separate `isSuperuser` permission. Every signed-in user can use Settings for account details and password updates.
+Roles and titles are arbitrary text on users/team nodes. Team visibility comes from the tree: a user with children can switch to read-only team view, and team tree administration comes from the separate `isSuperuser` permission. Every signed-in user can use Settings for account details, language, and password updates.
+
+The UI supports English and Chinese. Change language from the login screen or from Settings.
 
 ## Runtime Data
 

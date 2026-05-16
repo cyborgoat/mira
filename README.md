@@ -8,9 +8,10 @@ The current app starts with seeded mock users and focuses on five tabs:
 - **Tasks**: create, edit, complete, delete, search, prioritize, and track due dates for the signed-in user's own node.
 - **Notes**: write Markdown notes, tag them, preview them, upload `.md`, `.markdown`, or `.txt` files, save edits, and delete notes for the signed-in user's own node.
 - **Stats**: summarize tasks and meeting notes by daily, weekly, or monthly periods and export Markdown.
-- **Settings**: account details and password for every user, plus a superuser-only team tree tab and JSON workspace tools.
+- **Settings**: account details, language, and password for every user, plus a superuser-only team tree tab and JSON workspace tools.
 
 Work records are persisted by the NestJS API. Browser `localStorage` stores only the API access token.
+The web UI supports English and Chinese through `react-i18next`; language preference is stored locally in the browser.
 
 Roles and titles are free-form text. Permissions are not derived from labels like member, manager, or superuser. A user can view subordinate data when their linked team node has children, and superuser access is a separate `isSuperuser` permission used for team tree administration.
 
@@ -76,6 +77,7 @@ The active frontend is implemented in:
 
 ```text
 apps/web/src/main.tsx
+apps/web/src/i18n.ts
 apps/web/src/styles.css
 apps/web/src/components/ui/
 ```

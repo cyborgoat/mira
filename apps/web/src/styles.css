@@ -707,6 +707,67 @@ label strong {
   font-weight: 650;
 }
 
+.login-brand .language-select {
+  margin-left: auto;
+}
+
+.login-brand .language-switch {
+  margin-left: auto;
+}
+
+.segmented-switch,
+.language-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  border: 1px solid var(--mira-border);
+  border-radius: 999px;
+  background: var(--mira-surface-2);
+  color: var(--mira-muted);
+  padding: 2px;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.language-switch {
+  min-width: 82px;
+}
+
+.language-switch.compact {
+  min-width: 68px;
+  min-height: 30px;
+}
+
+.view-mode-switch {
+  min-height: 30px;
+}
+
+.segmented-switch button,
+.language-switch span {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 8px;
+}
+
+.segmented-switch button {
+  min-width: 72px;
+  font: inherit;
+}
+
+.segmented-switch button.active,
+.language-switch span.active {
+  background: var(--mira-surface);
+  color: var(--mira-accent-strong);
+  box-shadow: 0 1px 2px oklch(0.18 0.018 255 / 0.08);
+}
+
 .login-card h1 {
   margin-bottom: 2px;
 }

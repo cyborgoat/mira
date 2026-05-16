@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -27,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import i18n from "./i18n";
 import "./styles.css";
 
 type Route = "dashboard" | "tasks" | "notes" | "stats" | "settings";
@@ -97,15 +100,16 @@ type WorkspaceExport = {
 const API_URL = import.meta.env.VITE_MIRA_API_URL ?? "http://127.0.0.1:8000";
 const TOKEN_KEY = "mira-api-token-v1";
 
-const nav: Array<{ key: Route; label: string; icon: React.ComponentType<{ size?: number }> }> = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "tasks", label: "Tasks", icon: ListChecks },
-  { key: "notes", label: "Notes", icon: FileText },
-  { key: "stats", label: "Stats", icon: BarChart3 },
-  { key: "settings", label: "Settings", icon: Settings },
+const nav: Array<{ key: Route; icon: React.ComponentType<{ size?: number }> }> = [
+  { key: "dashboard", icon: LayoutDashboard },
+  { key: "tasks", icon: ListChecks },
+  { key: "notes", icon: FileText },
+  { key: "stats", icon: BarChart3 },
+  { key: "settings", icon: Settings },
 ];
 
 function App() {
+  const { t } = useTranslation();
   const [route, setRoute] = useState<Route>(resolveRouteFromHash());
   const [period, setPeriod] = useState<Period>("weekly");
   const [viewMode, setViewMode] = useState<ViewMode>("personal");
@@ -136,12 +140,12 @@ function App() {
   };
 
   if (!api.user) return <LoginScreen onLogin={api.login} error={api.error} loading={api.loading} />;
-  const headerEyebrow = route === "settings" ? "Account settings" : viewMode === "team" ? "Read-only subordinate view" : api.user.role || "Personal workspace";
+  const headerEyebrow = route === "settings" ? t("header.accountSettings") : viewMode === "team" ? t("header.readOnlyTeam") : api.user.role || t("header.personalWorkspace");
   const headerCopy = route === "settings"
-    ? "Manage your account details and password."
+    ? t("header.settingsCopy")
     : viewMode === "team"
-      ? "Subordinate stats and details for your team tree."
-      : "Your own work content and activity stats.";
+      ? t("header.teamCopy")
+      : t("header.personalCopy");
 
   return (
     <div className="app-shell">
@@ -149,20 +153,18 @@ function App() {
         <div className="brand">
           <span className="brand-mark">M</span>
           <div className="brand-stack">
-            <span className="brand-name">Mira</span>
-            <span className="brand-slogan">Work workspace</span>
+            <span className="brand-name">{t("common.appName")}</span>
+            <span className="brand-slogan">{t("common.appSubtitle")}</span>
           </div>
         </div>
         <div className="row topbar-controls">
           {api.user.canViewTeam && (
-            <ToggleGroup type="single" value={viewMode} onValueChange={(next) => next && setViewMode(next as ViewMode)} aria-label="View mode">
-              <ToggleGroupItem value="personal">Personal</ToggleGroupItem>
-              <ToggleGroupItem value="team">Team view</ToggleGroupItem>
-            </ToggleGroup>
+            <ViewModeSwitch value={viewMode} onChange={setViewMode} />
           )}
+          <LanguageSelect compact />
           <Badge>{api.user.teamNode?.name ?? api.user.email}</Badge>
           <Button type="button" variant="ghost" size="sm" onClick={api.logout}>
-            <LogOut size={15} /> Sign out
+            <LogOut size={15} /> {t("common.signOut")}
           </Button>
         </div>
       </header>
@@ -181,7 +183,7 @@ function App() {
                 onClick={() => navigateTo(item.key)}
               >
                 <Icon size={17} />
-                {item.label}
+                {t(`nav.${item.key}`)}
               </Button>
             );
           })}
@@ -193,7 +195,7 @@ function App() {
         <div className="page-header">
           <div>
             <div className="eyebrow">{headerEyebrow}</div>
-            <h1>{currentNav.label}</h1>
+            <h1>{t(`nav.${currentNav.key}`)}</h1>
             <p className="muted">{headerCopy}</p>
           </div>
           {(route === "dashboard" || route === "stats") && <PeriodControl value={period} onChange={setPeriod} />}
@@ -242,6 +244,7 @@ function App() {
 }
 
 function LoginScreen({ onLogin, error, loading }: { onLogin: (email: string, password: string) => Promise<void>; error: string; loading: boolean }) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("manager@mira.local");
   const [password, setPassword] = useState("local-password");
 
@@ -255,24 +258,25 @@ function LoginScreen({ onLogin, error, loading }: { onLogin: (email: string, pas
       <Card className="stack login-card">
         <div className="login-brand">
           <span className="brand-mark">M</span>
-          Mira
+          {t("common.appName")}
+          <LanguageSelect compact />
         </div>
         <div>
-          <h1>Sign in</h1>
-          <p className="muted">Mock users: manager@mira.local, alex@mira.local, sam@mira.local, admin@mira.local.</p>
+          <h1>{t("login.title")}</h1>
+          <p className="muted">{t("login.mockUsers")}</p>
         </div>
         {error && <div className="form-error">{error}</div>}
         <form className="stack" onSubmit={submit}>
           <label className="field">
-            <span>Email</span>
+            <span>{t("login.email")}</span>
             <Input value={email} onChange={(event) => setEmail(event.target.value)} />
           </label>
           <label className="field">
-            <span>Password</span>
+            <span>{t("login.password")}</span>
             <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
           </label>
           <Button type="submit" disabled={loading}>
-            {loading ? "Signing in" : "Sign in"}
+            {loading ? t("login.signingIn") : t("login.submit")}
           </Button>
         </form>
       </Card>
@@ -281,6 +285,7 @@ function LoginScreen({ onLogin, error, loading }: { onLogin: (email: string, pas
 }
 
 function DashboardView({ view, mode, nodes }: { view: WorkView | null; mode: ViewMode; nodes: TeamNode[] }) {
+  const { t } = useTranslation();
   const tasks = view?.tasks ?? [];
   const notes = view?.notes ?? [];
   const dueTasks = tasks.filter((task) => task.status === "open" && task.dueDate).slice(0, 5);
@@ -290,28 +295,28 @@ function DashboardView({ view, mode, nodes }: { view: WorkView | null; mode: Vie
       <div className="grid two-col work-grid">
         <Card className="stack">
           <div className="row-between">
-            <h2>{mode === "team" ? "Team tasks" : "My tasks"}</h2>
-            <Badge>{tasks.length} records</Badge>
+            <h2>{mode === "team" ? t("dashboard.teamTasks") : t("dashboard.myTasks")}</h2>
+            <Badge>{tasks.length} {t("common.records")}</Badge>
           </div>
           <SummaryList
             items={tasks.slice(0, 8).map((task) => ({
               id: task.id,
               date: task.completedAt ?? task.dueDate ?? task.createdAt,
               title: task.title,
-              body: `${nodeLabel(nodes, task.ownerNodeId)} · ${priorityLabel(task.priority)} · ${task.status}`,
+              body: `${nodeLabel(nodes, task.ownerNodeId)} · ${priorityLabel(task.priority, t)} · ${t(`status.${task.status}`)}`,
             }))}
           />
         </Card>
         <Card className="stack">
           <div className="row-between">
-            <h2>{mode === "team" ? "Team notes" : "My notes"}</h2>
-            <Badge>{notes.length} notes</Badge>
+            <h2>{mode === "team" ? t("dashboard.teamNotes") : t("dashboard.myNotes")}</h2>
+            <Badge>{notes.length} {t("common.notes")}</Badge>
           </div>
           <SummaryList items={notes.slice(0, 8).map((note) => ({ id: note.id, date: note.date, title: note.title, body: note.tags || firstLines(note.content) }))} />
         </Card>
       </div>
       <Card className="stack">
-        <h2>Due soon</h2>
+        <h2>{t("dashboard.dueSoon")}</h2>
         <SummaryList items={dueTasks.map((task) => ({ id: task.id, date: task.dueDate!, title: task.title, body: task.details }))} />
       </Card>
     </div>
@@ -333,6 +338,7 @@ function TasksView({
   onUpdate: (id: string, payload: { title?: string; details?: string; status?: TaskStatus; priority?: TaskPriority; dueDate?: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState({ title: "", details: "", priority: "normal" as TaskPriority, dueDate: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -376,21 +382,21 @@ function TasksView({
       {!readOnly && (
         <Card className="stack editor-panel">
           <div className="row-between">
-            <h2>{editingTask ? "Edit task" : "New task"}</h2>
+            <h2>{editingTask ? t("tasks.editTask") : t("tasks.newTask")}</h2>
             {editingTask && <Badge>{formatDate(editingTask.createdAt)}</Badge>}
           </div>
-          <Input value={draft.title} placeholder="Task title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+          <Input value={draft.title} placeholder={t("tasks.titlePlaceholder")} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
           <div className="editor-fields">
             <PrioritySelect value={draft.priority} onChange={(priority) => setDraft({ ...draft, priority })} />
             <Input type="date" value={draft.dueDate} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} />
           </div>
-          <Textarea className="compact" value={draft.details} placeholder="Details, blockers, links, or acceptance notes" onChange={(event) => setDraft({ ...draft, details: event.target.value })} />
+          <Textarea className="compact" value={draft.details} placeholder={t("tasks.detailsPlaceholder")} onChange={(event) => setDraft({ ...draft, details: event.target.value })} />
           <div className="row-between">
             <Button variant="secondary" type="button" onClick={newTask}>
-              Clear
+              {t("common.clear")}
             </Button>
             <Button type="button" disabled={!draft.title.trim()} onClick={saveTask}>
-              {editingTask ? <Save size={16} /> : <Plus size={16} />} {editingTask ? "Save task" : "Add task"}
+              {editingTask ? <Save size={16} /> : <Plus size={16} />} {editingTask ? t("tasks.saveTask") : t("tasks.addTask")}
             </Button>
           </div>
         </Card>
@@ -398,28 +404,28 @@ function TasksView({
 
       <Card className="stack">
         <div className="row-between">
-          <h2>{readOnly ? "Team task details" : "Task list"}</h2>
-          <Badge>{tasks.filter((task) => task.status === "complete").length} complete</Badge>
+          <h2>{readOnly ? t("tasks.teamDetails") : t("tasks.taskList")}</h2>
+          <Badge>{tasks.filter((task) => task.status === "complete").length} {t("common.complete")}</Badge>
         </div>
         <div className="search-field">
           <Search size={16} />
-          <Input value={query} placeholder="Search tasks" onChange={(event) => setQuery(event.target.value)} />
+          <Input value={query} placeholder={t("tasks.search")} onChange={(event) => setQuery(event.target.value)} />
         </div>
         <div className="filter-row">
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as "all" | TaskStatus)}>
-            <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder={t("tasks.status")} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All status</SelectItem>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="complete">Complete</SelectItem>
+              <SelectItem value="all">{t("tasks.allStatus")}</SelectItem>
+              <SelectItem value="open">{t("status.open")}</SelectItem>
+              <SelectItem value="complete">{t("status.complete")}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as "all" | TaskPriority)}>
-            <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
+            <SelectTrigger><SelectValue placeholder={t("tasks.priority")} /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All priority</SelectItem>
+              <SelectItem value="all">{t("tasks.allPriority")}</SelectItem>
               {(["low", "normal", "high", "urgent"] as TaskPriority[]).map((priority) => (
-                <SelectItem value={priority} key={priority}>{priorityLabel(priority)}</SelectItem>
+                <SelectItem value={priority} key={priority}>{priorityLabel(priority, t)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -433,27 +439,27 @@ function TasksView({
                   <span className="todo-title">{task.title}</span>
                 </label>
                 <div className="row badge-row">
-                  <Badge>{priorityLabel(task.priority)}</Badge>
+                  <Badge>{priorityLabel(task.priority, t)}</Badge>
                   <Badge>{nodeLabel(nodes, task.ownerNodeId)}</Badge>
                 </div>
               </div>
               {task.details && <p className="muted item-body">{task.details}</p>}
               <div className="item-actions">
-                <span className="muted">{task.dueDate ? `Due ${formatDate(task.dueDate)}` : formatDate(task.completedAt ?? task.createdAt)}</span>
+                <span className="muted">{task.dueDate ? t("tasks.due", { date: formatDate(task.dueDate) }) : formatDate(task.completedAt ?? task.createdAt)}</span>
                 {!readOnly && (
                   <>
                     <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(task)}>
-                      <Edit3 size={14} /> Edit
+                      <Edit3 size={14} /> {t("common.edit")}
                     </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => confirmAction("Delete this task?", () => onDelete(task.id))}>
-                      <Trash2 size={14} /> Delete
+                    <Button type="button" variant="ghost" size="sm" onClick={() => confirmAction(t("tasks.deleteConfirm"), () => onDelete(task.id))}>
+                      <Trash2 size={14} /> {t("common.delete")}
                     </Button>
                   </>
                 )}
               </div>
             </div>
           ))}
-          {!visibleTasks.length && <EmptyState title="No tasks found" text="Add a task or adjust the search." actionLabel={readOnly ? undefined : "New task"} onAction={newTask} />}
+          {!visibleTasks.length && <EmptyState title={t("tasks.emptyTitle")} text={t("tasks.emptyText")} actionLabel={readOnly ? undefined : t("tasks.newTask")} onAction={newTask} />}
         </div>
       </Card>
     </div>
@@ -475,6 +481,7 @@ function NotesView({
   onUpdate: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [activeId, setActiveId] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const activeNote = activeId ? notes.find((note) => note.id === activeId) ?? null : null;
@@ -495,7 +502,7 @@ function NotesView({
 
   const saveNote = useCallback(async () => {
     if (readOnly) return;
-    const title = draft.title.trim() || "Untitled meeting";
+    const title = draft.title.trim() || t("notes.untitled");
     if (activeNote && !isCreating) {
       await onUpdate(activeNote.id, { title, date: draft.date, content: draft.content, tags: draft.tags });
     } else {
@@ -517,7 +524,7 @@ function NotesView({
     if (!file || readOnly) return;
     setUploadError("");
     if (!/\.(md|markdown|txt)$/i.test(file.name)) {
-      setUploadError("Only .md, .markdown, and .txt files are supported.");
+      setUploadError(t("notes.uploadError"));
       return;
     }
     try {
@@ -527,7 +534,7 @@ function NotesView({
       setActiveId(created.id);
       setIsCreating(false);
     } catch {
-      setUploadError("This file could not be read.");
+      setUploadError(t("notes.readError"));
     }
   };
 
@@ -535,17 +542,17 @@ function NotesView({
     <div className="grid notes-grid">
       <Card className="stack note-list">
         <div className="row-between">
-          <h2>{readOnly ? "Team notes" : "Notes"}</h2>
+          <h2>{readOnly ? t("notes.teamTitle") : t("notes.title")}</h2>
           {!readOnly && (
             <Button type="button" size="sm" onClick={newNote}>
-              <Plus size={15} /> New
+              <Plus size={15} /> {t("notes.new")}
             </Button>
           )}
         </div>
         {!readOnly && (
           <label className="upload-button">
             <Upload size={15} />
-            Upload markdown
+            {t("notes.uploadMarkdown")}
             <Input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={(event) => uploadNote(event.target.files?.[0])} />
           </label>
         )}
@@ -565,35 +572,35 @@ function NotesView({
               {note.tags && <small>{note.tags}</small>}
             </button>
           ))}
-          {!notes.length && <EmptyState title="No notes yet" text="Create a note or upload a markdown file." actionLabel={readOnly ? undefined : "New note"} onAction={newNote} />}
+          {!notes.length && <EmptyState title={t("notes.emptyTitle")} text={t("notes.emptyText")} actionLabel={readOnly ? undefined : t("notes.newNote")} onAction={newNote} />}
         </div>
       </Card>
 
       <Card className="stack markdown-editor">
         <div className="row-between">
-          <h2>Markdown editor</h2>
+          <h2>{t("notes.markdownEditor")}</h2>
           <Badge>{formatDate(draft.date)}</Badge>
         </div>
         <div className="editor-fields">
-          <Input disabled={readOnly} value={draft.title} placeholder="Meeting title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+          <Input disabled={readOnly} value={draft.title} placeholder={t("notes.meetingTitle")} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
           <Input disabled={readOnly} type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
         </div>
-        <Input disabled={readOnly} value={draft.tags} placeholder="Tags, comma separated" onChange={(event) => setDraft({ ...draft, tags: event.target.value })} />
+        <Input disabled={readOnly} value={draft.tags} placeholder={t("notes.tagsPlaceholder")} onChange={(event) => setDraft({ ...draft, tags: event.target.value })} />
         <Textarea disabled={readOnly} className="markdown-source" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
         {!readOnly && (
           <div className="row-between">
-            <Button type="button" variant="secondary" disabled={!activeNote} onClick={() => activeNote && confirmAction("Delete this note?", () => onDelete(activeNote.id))}>
-              <Trash2 size={15} /> Delete
+            <Button type="button" variant="secondary" disabled={!activeNote} onClick={() => activeNote && confirmAction(t("notes.deleteConfirm"), () => onDelete(activeNote.id))}>
+              <Trash2 size={15} /> {t("common.delete")}
             </Button>
             <Button type="button" onClick={saveNote}>
-              <Save size={15} /> Save note
+              <Save size={15} /> {t("notes.saveNote")}
             </Button>
           </div>
         )}
       </Card>
 
       <Card className="stack markdown-preview-card">
-        <h2>Preview</h2>
+        <h2>{t("notes.preview")}</h2>
         <div className="markdown-preview" dangerouslySetInnerHTML={{ __html: renderMarkdown(draft.content) }} />
       </Card>
     </div>
@@ -601,6 +608,7 @@ function NotesView({
 }
 
 function StatsView({ view, period }: { view: WorkView | null; period: Period }) {
+  const { t } = useTranslation();
   const tasks = view?.tasks ?? [];
   const notes = view?.notes ?? [];
   const completedTasks = tasks.filter((task) => task.status === "complete");
@@ -610,24 +618,24 @@ function StatsView({ view, period }: { view: WorkView | null; period: Period }) 
       <StatsGrid stats={buildStats(tasks, notes)} />
       <Card className="stack summary-panel">
         <div className="row-between">
-          <h2>{periodLabel(period)} summary</h2>
+          <h2>{t("stats.summary", { period: periodLabel(period, t) })}</h2>
           <div className="row">
-            <Badge>{tasks.length + notes.length} records</Badge>
+            <Badge>{tasks.length + notes.length} {t("common.records")}</Badge>
             <Button type="button" size="sm" variant="secondary" onClick={() => exportSummaryMarkdown(tasks, notes, period)}>
-              <Download size={14} /> Export
+              <Download size={14} /> {t("common.export")}
             </Button>
           </div>
         </div>
         <div className="summary-section">
-          <h3>Completed tasks</h3>
+          <h3>{t("stats.completedTasks")}</h3>
           <SummaryList items={completedTasks.map((task) => ({ id: task.id, date: task.completedAt ?? task.createdAt, title: task.title, body: task.details }))} />
         </div>
         <div className="summary-section">
-          <h3>Open tasks</h3>
+          <h3>{t("stats.openTasks")}</h3>
           <SummaryList items={openTasks.map((task) => ({ id: task.id, date: task.dueDate ?? task.createdAt, title: task.title, body: task.details }))} />
         </div>
         <div className="summary-section">
-          <h3>Meeting notes</h3>
+          <h3>{t("stats.meetingNotes")}</h3>
           <SummaryList items={notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: firstLines(note.content) }))} />
         </div>
       </Card>
@@ -637,11 +645,12 @@ function StatsView({ view, period }: { view: WorkView | null; period: Period }) 
 }
 
 function AchievementsView({ tasks, notes }: { tasks: Task[]; notes: MeetingNote[] }) {
+  const { t } = useTranslation();
   const stats = buildStats(tasks, notes);
   const achievements = [
-    { id: "completed", title: "Execution streak", value: stats.completedTasks, target: 5, text: "Completed tasks.", sources: tasks.filter((task) => task.status === "complete").map((task) => task.title) },
-    { id: "notes", title: "Meeting memory", value: stats.notes, target: 3, text: "Saved meeting notes.", sources: notes.map((note) => note.title) },
-    { id: "archive", title: "Historical record", value: tasks.length + notes.length, target: 10, text: "Total task and note records.", sources: [...tasks.map((task) => task.title), ...notes.map((note) => note.title)] },
+    { id: "completed", title: t("achievements.executionTitle"), value: stats.completedTasks, target: 5, text: t("achievements.executionText"), sources: tasks.filter((task) => task.status === "complete").map((task) => task.title) },
+    { id: "notes", title: t("achievements.memoryTitle"), value: stats.notes, target: 3, text: t("achievements.memoryText"), sources: notes.map((note) => note.title) },
+    { id: "archive", title: t("achievements.archiveTitle"), value: tasks.length + notes.length, target: 10, text: t("achievements.archiveText"), sources: [...tasks.map((task) => task.title), ...notes.map((note) => note.title)] },
   ];
   return (
     <div className="grid three-col">
@@ -656,10 +665,10 @@ function AchievementsView({ tasks, notes }: { tasks: Task[]; notes: MeetingNote[
             <h2>{achievement.title}</h2>
             <p className="muted">{achievement.text}</p>
             <details className="achievement-detail">
-              <summary>Source records</summary>
+              <summary>{t("achievements.sources")}</summary>
               <ul>
                 {achievement.sources.slice(0, 6).map((source) => <li key={source}>{source}</li>)}
-                {!achievement.sources.length && <li>No source records yet</li>}
+                {!achievement.sources.length && <li>{t("achievements.noSources")}</li>}
               </ul>
             </details>
             <div className="progress-track"><span style={{ width: `${Math.min(100, (achievement.value / achievement.target) * 100)}%` }} /></div>
@@ -695,14 +704,15 @@ function SettingsView({
   onImport: (file: File | undefined) => Promise<void>;
   onReset: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<SettingsTab>("account");
   const [draft, setDraft] = useState({ name: "", title: "", parentId: "root" });
   const [editingId, setEditingId] = useState("");
   const editingNode = nodes.find((node) => node.id === editingId);
   const tabs: Array<{ key: SettingsTab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
-    { key: "account", label: "Account", icon: UserRound },
-    { key: "security", label: "Password", icon: KeyRound },
-    ...(user.canManageSettings ? [{ key: "team" as SettingsTab, label: "Team tree", icon: GitFork }] : []),
+    { key: "account", label: t("settings.account"), icon: UserRound },
+    { key: "security", label: t("settings.password"), icon: KeyRound },
+    ...(user.canManageSettings ? [{ key: "team" as SettingsTab, label: t("settings.teamTree"), icon: GitFork }] : []),
   ];
 
   useEffect(() => {
@@ -724,7 +734,7 @@ function SettingsView({
 
   return (
     <div className="settings-layout">
-      <nav className="settings-tabs" aria-label="Settings sections">
+      <nav className="settings-tabs" aria-label={t("settings.sections")}>
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
@@ -743,8 +753,8 @@ function SettingsView({
           <div className="grid team-grid">
             <Card className="stack">
               <div className="row-between">
-                <h2>Team tree</h2>
-                <Badge>{nodes.length} nodes</Badge>
+                <h2>{t("settings.teamTree")}</h2>
+                <Badge>{t("settings.nodes", { count: nodes.length })}</Badge>
               </div>
               <div className="team-tree">
                 {buildTreeRows(nodes).map(({ node, depth }) => (
@@ -758,48 +768,48 @@ function SettingsView({
                     }}
                   >
                     <span>{node.name}</span>
-                    <small>{node.title || "Untitled role"}</small>
+                    <small>{node.title || t("common.untitledRole")}</small>
                   </button>
                 ))}
               </div>
             </Card>
             <Card className="stack">
               <div className="row-between">
-                <h2>{editingNode ? "Edit node" : "Add node"}</h2>
+                <h2>{editingNode ? t("settings.editNode") : t("settings.addNode")}</h2>
                 {editingNode && <Badge>{editingNode.name}</Badge>}
               </div>
-              <Input value={draft.name} placeholder="Name" onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-              <Input value={draft.title} placeholder="Role or title, any text" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+              <Input value={draft.name} placeholder={t("settings.name")} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+              <Input value={draft.title} placeholder={t("settings.rolePlaceholder")} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
               <Select value={draft.parentId} onValueChange={(value) => setDraft({ ...draft, parentId: value })}>
-                <SelectTrigger><SelectValue placeholder="Parent node" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder={t("settings.parentNode")} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="root">Top level</SelectItem>
+                  <SelectItem value="root">{t("settings.topLevel")}</SelectItem>
                   {nodes.filter((node) => node.id !== editingId).map((node) => (
                     <SelectItem value={node.id} key={node.id}>{nodePath(nodes, node)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <div className="row-between">
-                <Button type="button" variant="secondary" onClick={() => { setEditingId(""); setDraft({ name: "", title: "", parentId: "root" }); }}>Clear</Button>
-                <Button type="button" disabled={!draft.name.trim()} onClick={save}>{editingNode ? <Save size={15} /> : <Plus size={15} />} {editingNode ? "Save" : "Add"}</Button>
+                <Button type="button" variant="secondary" onClick={() => { setEditingId(""); setDraft({ name: "", title: "", parentId: "root" }); }}>{t("common.clear")}</Button>
+                <Button type="button" disabled={!draft.name.trim()} onClick={save}>{editingNode ? <Save size={15} /> : <Plus size={15} />} {editingNode ? t("common.save") : t("common.add")}</Button>
               </div>
               {editingNode && (
-                <Button type="button" variant="ghost" onClick={() => confirmAction("Delete this team node?", () => onDelete(editingNode.id))}>
-                  <Trash2 size={15} /> Delete selected node
+                <Button type="button" variant="ghost" onClick={() => confirmAction(t("settings.deleteNodeConfirm"), () => onDelete(editingNode.id))}>
+                  <Trash2 size={15} /> {t("settings.deleteNode")}
                 </Button>
               )}
             </Card>
             <Card className="stack">
-              <h2>Workspace data</h2>
-              <p className="muted">JSON tools for test data and local resets.</p>
+              <h2>{t("settings.workspaceData")}</h2>
+              <p className="muted">{t("settings.workspaceDataHelp")}</p>
               <div className="row tool-row">
-                <Button type="button" variant="secondary" onClick={onExport}><Download size={15} /> Export</Button>
+                <Button type="button" variant="secondary" onClick={onExport}><Download size={15} /> {t("common.export")}</Button>
                 <label className="upload-button tool-upload">
-                  <Upload size={15} /> Import
+                  <Upload size={15} /> {t("common.import")}
                   <Input type="file" accept="application/json,.json" onChange={(event) => onImport(event.target.files?.[0])} />
                 </label>
-                <Button type="button" variant="ghost" onClick={() => confirmAction("Reset the workspace? This deletes all tasks, notes, and team nodes.", onReset)}>
-                  <Trash2 size={15} /> Reset
+                <Button type="button" variant="ghost" onClick={() => confirmAction(t("settings.resetConfirm"), onReset)}>
+                  <Trash2 size={15} /> {t("common.reset")}
                 </Button>
               </div>
               <InlineStats stats={teamView ? buildStats(teamView.tasks, teamView.notes) : buildStats([], [])} />
@@ -812,6 +822,7 @@ function SettingsView({
 }
 
 function AccountSettingsPanel({ user, onSubmit }: { user: User; onSubmit: (payload: { name: string; email: string; role: string }) => Promise<void> }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState({ name: user.teamNode?.name ?? "", email: user.email, role: user.role ?? "" });
 
   useEffect(() => {
@@ -822,33 +833,37 @@ function AccountSettingsPanel({ user, onSubmit }: { user: User; onSubmit: (paylo
     <Card className="stack settings-panel">
       <div className="panel-heading">
         <div>
-          <h2>Account</h2>
-          <p className="muted">These details identify your workspace profile.</p>
+          <h2>{t("settings.account")}</h2>
+          <p className="muted">{t("settings.accountHelp")}</p>
         </div>
-        <Badge>{user.isSuperuser ? "Superuser" : "User"}</Badge>
+        <Badge>{user.isSuperuser ? t("common.superuser") : t("common.user")}</Badge>
       </div>
       <div className="settings-form">
         <label className="field">
-          <span>Name</span>
+          <span>{t("settings.name")}</span>
           <Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
         </label>
         <label className="field">
-          <span>Email</span>
+          <span>{t("settings.email")}</span>
           <Input type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} />
         </label>
         <label className="field">
-          <span>Role</span>
-          <Input value={draft.role} placeholder="Any title or role text" onChange={(event) => setDraft({ ...draft, role: event.target.value })} />
+          <span>{t("settings.role")}</span>
+          <Input value={draft.role} placeholder={t("settings.rolePlaceholder")} onChange={(event) => setDraft({ ...draft, role: event.target.value })} />
         </label>
         <div className="settings-meta">
-          <span>Tree node</span>
-          <strong>{user.teamNode?.title || "No title set"}</strong>
+          <span>{t("settings.treeNode")}</span>
+          <strong>{user.teamNode?.title || t("common.noTitle")}</strong>
+        </div>
+        <div className="settings-meta">
+          <span>{t("language.label")}</span>
+          <LanguageSelect />
         </div>
       </div>
       <div className="row-between">
-        <span className="muted">Role text does not grant permissions.</span>
+        <span className="muted">{t("settings.roleHelp")}</span>
         <Button type="button" disabled={!draft.name.trim() || !draft.email.trim()} onClick={() => onSubmit({ name: draft.name, email: draft.email, role: draft.role })}>
-          <Save size={15} /> Save account
+          <Save size={15} /> {t("settings.saveAccount")}
         </Button>
       </div>
     </Card>
@@ -856,6 +871,7 @@ function AccountSettingsPanel({ user, onSubmit }: { user: User; onSubmit: (paylo
 }
 
 function PasswordSettingsPanel({ onSubmit }: { onSubmit: (payload: { currentPassword: string; newPassword: string }) => Promise<void> }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
   const mismatch = draft.newPassword && draft.confirmPassword && draft.newPassword !== draft.confirmPassword;
   const canSave = draft.currentPassword.length > 0 && draft.newPassword.length >= 8 && draft.newPassword === draft.confirmPassword;
@@ -870,29 +886,29 @@ function PasswordSettingsPanel({ onSubmit }: { onSubmit: (payload: { currentPass
     <Card className="stack settings-panel">
       <div className="panel-heading">
         <div>
-          <h2>Password</h2>
-          <p className="muted">Use at least 8 characters.</p>
+          <h2>{t("settings.password")}</h2>
+          <p className="muted">{t("settings.passwordHelp")}</p>
         </div>
-        <Badge>Private</Badge>
+        <Badge>{t("common.private")}</Badge>
       </div>
       <div className="settings-form">
         <label className="field">
-          <span>Current password</span>
+          <span>{t("settings.currentPassword")}</span>
           <Input type="password" value={draft.currentPassword} onChange={(event) => setDraft({ ...draft, currentPassword: event.target.value })} />
         </label>
         <label className="field">
-          <span>New password</span>
+          <span>{t("settings.newPassword")}</span>
           <Input type="password" value={draft.newPassword} onChange={(event) => setDraft({ ...draft, newPassword: event.target.value })} />
         </label>
         <label className="field">
-          <span>Confirm password</span>
+          <span>{t("settings.confirmPassword")}</span>
           <Input type="password" value={draft.confirmPassword} onChange={(event) => setDraft({ ...draft, confirmPassword: event.target.value })} />
         </label>
       </div>
       <div className="row-between">
-        <span className={mismatch ? "form-inline-error" : "muted"}>{mismatch ? "Passwords do not match." : "Password changes apply to the next login."}</span>
+        <span className={mismatch ? "form-inline-error" : "muted"}>{mismatch ? t("settings.passwordMismatch") : t("settings.passwordNextLogin")}</span>
         <Button type="button" disabled={!canSave} onClick={save}>
-          <Save size={15} /> Update password
+          <Save size={15} /> {t("settings.updatePassword")}
         </Button>
       </div>
     </Card>
@@ -900,32 +916,35 @@ function PasswordSettingsPanel({ onSubmit }: { onSubmit: (payload: { currentPass
 }
 
 function InlineStats({ stats }: { stats: ReturnType<typeof buildStats> }) {
+  const { t } = useTranslation();
   return (
     <div className="inline-stats">
-      <div><span>{stats.tasks}</span><small>Tasks</small></div>
-      <div><span>{stats.notes}</span><small>Notes</small></div>
-      <div><span>{stats.completionRate}%</span><small>Completion</small></div>
+      <div><span>{stats.tasks}</span><small>{t("settings.tasks")}</small></div>
+      <div><span>{stats.notes}</span><small>{t("common.notes")}</small></div>
+      <div><span>{stats.completionRate}%</span><small>{t("settings.completion")}</small></div>
     </div>
   );
 }
 
 function StatsGrid({ stats }: { stats: ReturnType<typeof buildStats> }) {
+  const { t } = useTranslation();
   return (
     <div className="grid three-col">
-      <Card className="metric-card"><h2>Total tasks</h2><div className="metric-value">{stats.tasks}</div><p className="muted">{stats.completedTasks} completed</p></Card>
-      <Card className="metric-card"><h2>Meeting notes</h2><div className="metric-value">{stats.notes}</div><p className="muted">{stats.noteWords} note words</p></Card>
-      <Card className="metric-card"><h2>Completion</h2><div className="metric-value">{stats.completionRate}%</div><p className="muted">Selected period</p></Card>
+      <Card className="metric-card"><h2>{t("stats.totalTasks")}</h2><div className="metric-value">{stats.tasks}</div><p className="muted">{t("stats.completedCount", { count: stats.completedTasks })}</p></Card>
+      <Card className="metric-card"><h2>{t("stats.notesMetric")}</h2><div className="metric-value">{stats.notes}</div><p className="muted">{t("stats.noteWords", { count: stats.noteWords })}</p></Card>
+      <Card className="metric-card"><h2>{t("stats.completion")}</h2><div className="metric-value">{stats.completionRate}%</div><p className="muted">{t("stats.selectedPeriod")}</p></Card>
     </div>
   );
 }
 
 function PrioritySelect({ value, onChange }: { value: TaskPriority; onChange: (value: TaskPriority) => void }) {
+  const { t } = useTranslation();
   return (
     <Select value={value} onValueChange={(priority) => onChange(priority as TaskPriority)}>
-      <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
+      <SelectTrigger><SelectValue placeholder={t("tasks.priority")} /></SelectTrigger>
       <SelectContent>
         {(["low", "normal", "high", "urgent"] as TaskPriority[]).map((priority) => (
-          <SelectItem value={priority} key={priority}>{priorityLabel(priority)}</SelectItem>
+          <SelectItem value={priority} key={priority}>{priorityLabel(priority, t)}</SelectItem>
         ))}
       </SelectContent>
     </Select>
@@ -933,17 +952,19 @@ function PrioritySelect({ value, onChange }: { value: TaskPriority; onChange: (v
 }
 
 function PeriodControl({ value, onChange }: { value: Period; onChange: (value: Period) => void }) {
+  const { t } = useTranslation();
   return (
-    <ToggleGroup type="single" value={value} onValueChange={(next) => next && onChange(next as Period)} aria-label="Summary period">
-      <ToggleGroupItem value="daily">Daily</ToggleGroupItem>
-      <ToggleGroupItem value="weekly">Weekly</ToggleGroupItem>
-      <ToggleGroupItem value="monthly">Monthly</ToggleGroupItem>
+    <ToggleGroup type="single" value={value} onValueChange={(next) => next && onChange(next as Period)} aria-label={t("stats.summary", { period: "" })}>
+      <ToggleGroupItem value="daily">{t("period.daily")}</ToggleGroupItem>
+      <ToggleGroupItem value="weekly">{t("period.weekly")}</ToggleGroupItem>
+      <ToggleGroupItem value="monthly">{t("period.monthly")}</ToggleGroupItem>
     </ToggleGroup>
   );
 }
 
 function SummaryList({ items }: { items: Array<{ id: string; date: string; title: string; body?: string }> }) {
-  if (!items.length) return <EmptyState title="No records" text="Nothing matches this period yet." />;
+  const { t } = useTranslation();
+  if (!items.length) return <EmptyState title={t("empty.noRecords")} text={t("empty.noRecordsText")} />;
   return (
     <div className="summary-list">
       {items.map((item) => (
@@ -967,6 +988,38 @@ function EmptyState({ title, text, actionLabel, onAction }: { title: string; tex
   );
 }
 
+function ViewModeSwitch({ value, onChange }: { value: ViewMode; onChange: (value: ViewMode) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="segmented-switch view-mode-switch" role="group" aria-label={t("mode.label")}>
+      <button type="button" className={value === "personal" ? "active" : ""} aria-pressed={value === "personal"} onClick={() => onChange("personal")}>
+        {t("mode.personal")}
+      </button>
+      <button type="button" className={value === "team" ? "active" : ""} aria-pressed={value === "team"} onClick={() => onChange("team")}>
+        {t("mode.team")}
+      </button>
+    </div>
+  );
+}
+
+function LanguageSelect({ compact = false }: { compact?: boolean }) {
+  const { t, i18n: i18nInstance } = useTranslation();
+  const language = i18nInstance.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
+  const nextLanguage = language === "zh" ? "en" : "zh";
+  return (
+    <button
+      type="button"
+      className={compact ? "language-switch compact" : "language-switch"}
+      aria-label={t("language.label")}
+      aria-pressed={language === "zh"}
+      onClick={() => void i18nInstance.changeLanguage(nextLanguage)}
+    >
+      <span className={language === "en" ? "active" : ""}>EN</span>
+      <span className={language === "zh" ? "active" : ""}>中</span>
+    </button>
+  );
+}
+
 function useMiraApi() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
   const [user, setUser] = useState<User | null>(null);
@@ -984,7 +1037,7 @@ function useMiraApi() {
     const response = await fetch(`${API_URL}${path}`, { ...options, headers });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      throw new Error(body.message || body.detail || `Request failed: ${response.status}`);
+      throw new Error(body.message || body.detail || i18n.t("errors.requestFailed", { status: response.status }));
     }
     return (await response.json()) as T;
   }, [token]);
@@ -1018,7 +1071,7 @@ function useMiraApi() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      if (!response.ok) throw new Error("Unable to sign in");
+      if (!response.ok) throw new Error(i18n.t("login.error"));
       const data = (await response.json()) as { accessToken: string; user: User };
       localStorage.setItem(TOKEN_KEY, data.accessToken);
       setToken(data.accessToken);
@@ -1065,7 +1118,7 @@ function useMiraApi() {
   const importWorkspace = async (file: File | undefined) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".json")) {
-      setError("Only .json workspace files are supported.");
+      setError(i18n.t("errors.jsonOnly"));
       return;
     }
     await mutate(async () => {
@@ -1150,7 +1203,7 @@ function resolveRouteFromHash(): Route {
 }
 
 function createBlankNote(): MeetingNote {
-  return { id: "", ownerNodeId: "", title: "", date: today(), tags: "", updatedAt: today(), content: "## Meeting notes\n\n- " };
+  return { id: "", ownerNodeId: "", title: "", date: today(), tags: "", updatedAt: today(), content: i18n.t("notes.blank") };
 }
 
 function buildStats(tasks: Task[], notes: MeetingNote[]) {
@@ -1198,11 +1251,11 @@ function nodePath(nodes: TeamNode[], node: TeamNode) {
 }
 
 function nodeLabel(nodes: TeamNode[], id: string) {
-  return nodes.find((node) => node.id === id)?.name ?? "Unknown";
+  return nodes.find((node) => node.id === id)?.name ?? i18n.t("common.unknown");
 }
 
 function formatDate(dateValue: string) {
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(dateValue));
+  return new Intl.DateTimeFormat(i18n.language === "zh" ? "zh-CN" : undefined, { month: "short", day: "numeric" }).format(new Date(dateValue));
 }
 
 function toDateInput(dateValue: string) {
@@ -1213,12 +1266,12 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function periodLabel(period: Period) {
-  return period.charAt(0).toUpperCase() + period.slice(1);
+function periodLabel(period: Period, t: TFunction) {
+  return t(`period.${period}`);
 }
 
-function priorityLabel(priority: TaskPriority) {
-  return priority.charAt(0).toUpperCase() + priority.slice(1);
+function priorityLabel(priority: TaskPriority, t: TFunction) {
+  return t(`priority.${priority}`);
 }
 
 function wordCount(value: string) {
@@ -1252,16 +1305,16 @@ function exportSummaryMarkdown(tasks: Task[], notes: MeetingNote[], period: Peri
   const completed = tasks.filter((task) => task.status === "complete");
   const open = tasks.filter((task) => task.status === "open");
   const lines = [
-    `# ${periodLabel(period)} Mira Summary`,
+    `# ${i18n.t("export.title", { period: periodLabel(period, i18n.t) })}`,
     "",
-    "## Completed tasks",
-    ...(completed.length ? completed.map((task) => `- ${task.title}${task.details ? `: ${task.details}` : ""}`) : ["- No completed tasks"]),
+    `## ${i18n.t("export.completedTasks")}`,
+    ...(completed.length ? completed.map((task) => `- ${task.title}${task.details ? `: ${task.details}` : ""}`) : [`- ${i18n.t("export.noCompletedTasks")}`]),
     "",
-    "## Open tasks",
-    ...(open.length ? open.map((task) => `- ${task.title}${task.dueDate ? ` (due ${formatDate(task.dueDate)})` : ""}`) : ["- No open tasks"]),
+    `## ${i18n.t("export.openTasks")}`,
+    ...(open.length ? open.map((task) => `- ${task.title}${task.dueDate ? ` (${i18n.t("tasks.due", { date: formatDate(task.dueDate) })})` : ""}`) : [`- ${i18n.t("export.noOpenTasks")}`]),
     "",
-    "## Meeting notes",
-    ...(notes.length ? notes.map((note) => `- ${note.title}${note.tags ? ` [${note.tags}]` : ""}: ${firstLines(note.content)}`) : ["- No meeting notes"]),
+    `## ${i18n.t("export.meetingNotes")}`,
+    ...(notes.length ? notes.map((note) => `- ${note.title}${note.tags ? ` [${note.tags}]` : ""}: ${firstLines(note.content)}`) : [`- ${i18n.t("export.noMeetingNotes")}`]),
     "",
   ];
   downloadBlob(lines.join("\n"), `mira-summary-${period}-${today()}.md`, "text/markdown");
@@ -1273,7 +1326,7 @@ function parseWorkspaceExport(text: string): WorkspaceExport {
     if (!parsed || !Array.isArray(parsed.teamNodes) || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.notes)) throw new Error();
     return parsed as WorkspaceExport;
   } catch {
-    throw new Error("This JSON file is not a Mira workspace export.");
+    throw new Error(i18n.t("errors.invalidWorkspace"));
   }
 }
 
@@ -1316,7 +1369,7 @@ function useKeyboardShortcuts({ onSave, onNew, enabled = true }: { onSave: () =>
 }
 
 function errorMessage(err: unknown) {
-  return err instanceof Error ? err.message : "Something went wrong";
+  return err instanceof Error ? err.message : i18n.t("errors.generic");
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
