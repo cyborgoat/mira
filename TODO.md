@@ -39,7 +39,6 @@ The active product direction is an API-backed team workspace with NestJS for tea
 - Add frontend component tests for tasks, notes, summary filters, and achievements.
 - Add accessibility checks for keyboard navigation and form labels.
 - Add Playwright smoke tests for the five active tabs.
-- Add CI checks for `npm run build:web`.
 
 ## Replaced Legacy Work
 
