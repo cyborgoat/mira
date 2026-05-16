@@ -9,6 +9,7 @@ import { TeamService } from "./team.service";
 export class TeamController {
   constructor(private readonly team: TeamService) {}
 
+  @UseGuards(JwtAuthGuard)
   @Get("tree")
   tree() {
     return this.team.listTree();
@@ -32,6 +33,7 @@ export class TeamController {
     return this.team.remove(id);
   }
 
+  @UseGuards(JwtAuthGuard, SuperuserGuard)
   @Get("view")
   view(@Query("nodeId") nodeId?: string, @Query("period") period: Period = "weekly") {
     return this.team.view(nodeId, period);

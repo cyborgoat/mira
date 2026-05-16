@@ -23,6 +23,8 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      isSuperuser: user.isSuperuser,
+      teamNodeId: user.teamNodeId,
     });
 
     return { accessToken, user: publicUser };

@@ -430,6 +430,37 @@ label strong {
   padding: 0 12px;
 }
 
+.inline-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inline-stats div {
+  border: 1px solid var(--mira-border);
+  border-radius: 8px;
+  background: var(--mira-surface-2);
+  padding: 10px;
+}
+
+.inline-stats span,
+.inline-stats small {
+  display: block;
+}
+
+.inline-stats span {
+  color: var(--mira-text);
+  font-size: 20px;
+  font-weight: 730;
+  line-height: 1;
+}
+
+.inline-stats small {
+  color: var(--mira-muted);
+  font-size: 12px;
+  margin-top: 5px;
+}
+
 .todo {
   border: 1px solid var(--mira-border);
   border-radius: 8px;

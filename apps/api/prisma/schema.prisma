@@ -11,9 +11,14 @@ model User {
   id           String   @id
   email        String   @unique
   passwordHash String
-  role         UserRole @default(superuser)
+  role         String?
+  isSuperuser  Boolean  @default(false)
+  teamNodeId   String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  teamNode     TeamNode? @relation(fields: [teamNodeId], references: [id])
+
+  @@index([teamNodeId])
 }
 
 model TeamNode {
@@ -27,6 +32,7 @@ model TeamNode {
   updatedAt DateTime   @updatedAt
   parent    TeamNode?  @relation("TeamNodeChildren", fields: [parentId], references: [id])
   children  TeamNode[] @relation("TeamNodeChildren")
+  users     User[]
   tasks     Task[]
   notes     MeetingNote[]
 
@@ -66,10 +72,6 @@ model MeetingNote {
   owner       TeamNode @relation(fields: [ownerNodeId], references: [id])
 
   @@index([ownerNodeId, date])
-}
-
-enum UserRole {
-  superuser
 }
 
 enum TaskStatus {

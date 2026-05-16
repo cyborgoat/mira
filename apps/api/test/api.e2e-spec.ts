@@ -47,7 +47,7 @@ describe("Mira Nest API", () => {
       .send({ email: "admin@example.com", password: "password123" })
       .expect(201);
 
-    expect(response.body.user.role).toBe("superuser");
+    expect(response.body.user.isSuperuser).toBe(true);
     expect(response.body.accessToken).toBeTruthy();
     token = response.body.accessToken;
   });
@@ -84,17 +84,51 @@ describe("Mira Nest API", () => {
       .send({ ownerNodeId: child.id, title: "Planning", date: new Date().toISOString(), content: "Team mode", tags: "planning,api" })
       .expect(201);
 
-    const self = await request(app.getHttpServer()).get(`/tasks?nodeId=${root.id}&scope=self`).expect(200);
+    const self = await request(app.getHttpServer()).get(`/tasks?nodeId=${root.id}&scope=self`).set("Authorization", `Bearer ${token}`).expect(200);
     expect(self.body).toHaveLength(0);
 
-    const tree = await request(app.getHttpServer()).get(`/tasks?nodeId=${root.id}&scope=tree`).expect(200);
+    const tree = await request(app.getHttpServer()).get(`/tasks?nodeId=${root.id}&scope=tree`).set("Authorization", `Bearer ${token}`).expect(200);
     expect(tree.body).toHaveLength(1);
     expect(tree.body[0].priority).toBe("high");
     expect(tree.body[0].dueDate).toBeTruthy();
 
-    const view = await request(app.getHttpServer()).get(`/team/view?nodeId=${root.id}&period=weekly`).expect(200);
+    const view = await request(app.getHttpServer()).get(`/team/view?nodeId=${root.id}&period=weekly`).set("Authorization", `Bearer ${token}`).expect(200);
     expect(view.body.stats.totalTasks).toBe(1);
     expect(view.body.stats.notes).toBe(1);
+  });
+
+  it("scopes personal and team views from the tree rather than role labels", async () => {
+    const managerLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "manager@mira.local", password: "password123" })
+      .expect(201);
+    const managerToken = managerLogin.body.accessToken;
+
+    expect(managerLogin.body.user.role).toBe("Engineering Lead");
+    expect(managerLogin.body.user.isSuperuser).toBe(false);
+    expect(managerLogin.body.user.canViewTeam).toBe(true);
+
+    const alexLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "alex@mira.local", password: "password123" })
+      .expect(201);
+    const alexToken = alexLogin.body.accessToken;
+
+    expect(alexLogin.body.user.role).toBe("Frontend Specialist");
+    expect(alexLogin.body.user.canViewTeam).toBe(false);
+
+    const managerWork = await request(app.getHttpServer()).get("/me/work?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
+    expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).toContain("Review team roadmap");
+    expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).not.toContain("Polish dashboard layout");
+
+    const managerTeam = await request(app.getHttpServer()).get("/me/team-view?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
+    const teamTitles = managerTeam.body.tasks.map((task: { title: string }) => task.title);
+    expect(teamTitles).toContain("Polish dashboard layout");
+    expect(teamTitles).toContain("Add scoped API tests");
+    expect(teamTitles).not.toContain("Review team roadmap");
+
+    await request(app.getHttpServer()).get("/me/team-view?period=monthly").set("Authorization", `Bearer ${alexToken}`).expect(403);
+    await request(app.getHttpServer()).get("/tasks").set("Authorization", `Bearer ${managerToken}`).expect(403);
   });
 });
 
@@ -112,9 +146,12 @@ async function createTestSchema(dbPath: string) {
       id TEXT NOT NULL PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       passwordHash TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'superuser',
+      role TEXT,
+      isSuperuser BOOLEAN NOT NULL DEFAULT false,
+      teamNodeId TEXT,
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME NOT NULL
+      updatedAt DATETIME NOT NULL,
+      CONSTRAINT User_teamNodeId_fkey FOREIGN KEY (teamNodeId) REFERENCES TeamNode (id) ON DELETE SET NULL ON UPDATE CASCADE
     )
   `);
   await client.$executeRawUnsafe(`

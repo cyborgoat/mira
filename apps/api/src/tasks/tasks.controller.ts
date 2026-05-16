@@ -1,10 +1,12 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { TaskPriority, TaskStatus } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { SuperuserGuard } from "../auth/superuser.guard";
 import { CreateTaskDto, UpdateTaskDto } from "./dto/task.dto";
 import { TasksService } from "./tasks.service";
 
 @Controller("tasks")
+@UseGuards(JwtAuthGuard, SuperuserGuard)
 export class TasksController {
   constructor(private readonly tasks: TasksService) {}
 
@@ -19,19 +21,16 @@ export class TasksController {
     return this.tasks.list({ nodeId, scope, query, status, priority });
   }
 
-  @UseGuards(JwtAuthGuard)
   @Post()
   create(@Body() payload: CreateTaskDto) {
     return this.tasks.create(payload);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Patch(":id")
   update(@Param("id") id: string, @Body() payload: UpdateTaskDto) {
     return this.tasks.update(id, payload);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Delete(":id")
   remove(@Param("id") id: string) {
     return this.tasks.remove(id);

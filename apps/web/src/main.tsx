@@ -1,22 +1,20 @@
 import {
-  BadgeCheck,
-  CalendarDays,
+  BarChart3,
   CheckCircle2,
-  ClipboardList,
   Download,
   Edit3,
   FileText,
-  GitFork,
+  LayoutDashboard,
   ListChecks,
   LogOut,
   Plus,
   Save,
   Search,
+  Settings,
   Trash2,
   Upload,
-  Users,
 } from "lucide-react";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,11 +26,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import "./styles.css";
 
-type Route = "team" | "tasks" | "notes" | "summary" | "achievements";
+type Route = "dashboard" | "tasks" | "notes" | "stats" | "settings";
+type ViewMode = "personal" | "team";
 type TaskStatus = "open" | "complete";
 type TaskPriority = "low" | "normal" | "high" | "urgent";
 type Period = "daily" | "weekly" | "monthly";
-type Scope = "self" | "tree";
 
 type TeamNode = {
   id: string;
@@ -69,21 +67,20 @@ type MeetingNote = {
 type User = {
   id: string;
   email: string;
-  role: "superuser";
+  role: string | null;
+  isSuperuser: boolean;
+  teamNodeId: string | null;
+  teamNode: Pick<TeamNode, "id" | "name" | "title" | "parentId"> | null;
+  canViewTeam: boolean;
+  canManageSettings: boolean;
 };
 
-type TeamView = {
+type WorkView = {
   selectedNode: TeamNode | null;
   descendantIds: string[];
   tasks: Task[];
   notes: MeetingNote[];
-  stats: {
-    totalTasks: number;
-    completedTasks: number;
-    openTasks: number;
-    notes: number;
-    completionRate: number;
-  };
+  stats: ReturnType<typeof buildStats>;
 };
 
 type WorkspaceExport = {
@@ -97,20 +94,23 @@ const API_URL = import.meta.env.VITE_MIRA_API_URL ?? "http://127.0.0.1:8000";
 const TOKEN_KEY = "mira-api-token-v1";
 
 const nav: Array<{ key: Route; label: string; icon: React.ComponentType<{ size?: number }> }> = [
-  { key: "team", label: "Team", icon: GitFork },
-  { key: "tasks", label: "Tasks", icon: ClipboardList },
-  { key: "notes", label: "Meeting Notes", icon: FileText },
-  { key: "summary", label: "Weekly Summary", icon: CalendarDays },
-  { key: "achievements", label: "Achievements", icon: BadgeCheck },
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "tasks", label: "Tasks", icon: ListChecks },
+  { key: "notes", label: "Notes", icon: FileText },
+  { key: "stats", label: "Stats", icon: BarChart3 },
+  { key: "settings", label: "Settings", icon: Settings },
 ];
 
 function App() {
   const [route, setRoute] = useState<Route>(resolveRouteFromHash());
   const [period, setPeriod] = useState<Period>("weekly");
-  const [scope, setScope] = useState<Scope>("tree");
+  const [viewMode, setViewMode] = useState<ViewMode>("personal");
   const api = useMiraApi();
-  const selectedNode = api.teamNodes.find((node) => node.id === api.selectedNodeId) ?? null;
+  const activeView = viewMode === "team" && api.teamView ? api.teamView : api.workView;
+  const visibleTasks = activeView?.tasks ?? [];
+  const visibleNotes = activeView?.notes ?? [];
   const currentNav = nav.find((item) => item.key === route) ?? nav[0];
+  const visibleNav = nav.filter((item) => item.key !== "settings" || api.user?.canManageSettings);
 
   useEffect(() => {
     const handleHashChange = () => setRoute(resolveRouteFromHash());
@@ -119,21 +119,20 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (api.user) void api.refresh();
-  }, [api.user, api.refresh]);
+    if (!api.user) return;
+    void api.loadWorkspace(period);
+  }, [api.user, period, api.revision, api.loadWorkspace]);
 
   useEffect(() => {
-    if (api.user) void api.loadWork(scope, period);
-  }, [api.user, api.selectedNodeId, scope, period, api.revision, api.loadWork]);
+    if (viewMode === "team" && !api.user?.canViewTeam) setViewMode("personal");
+  }, [api.user?.canViewTeam, viewMode]);
 
   const navigateTo = (nextRoute: Route) => {
     window.location.hash = nextRoute;
     setRoute(nextRoute);
   };
 
-  if (!api.user) {
-    return <LoginScreen onLogin={api.login} error={api.error} loading={api.loading} />;
-  }
+  if (!api.user) return <LoginScreen onLogin={api.login} error={api.error} loading={api.loading} />;
 
   return (
     <div className="app-shell">
@@ -142,14 +141,17 @@ function App() {
           <span className="brand-mark">M</span>
           <div className="brand-stack">
             <span className="brand-name">Mira</span>
-            <span className="brand-slogan">Team workspace</span>
+            <span className="brand-slogan">Work workspace</span>
           </div>
         </div>
         <div className="row topbar-controls">
-          <NodeSelect nodes={api.teamNodes} value={api.selectedNodeId} onChange={api.setSelectedNodeId} />
-          <ScopeControl value={scope} onChange={setScope} />
-          <Badge>{api.tasks.length} tasks</Badge>
-          <Badge>{api.notes.length} notes</Badge>
+          {api.user.canViewTeam && (
+            <ToggleGroup type="single" value={viewMode} onValueChange={(next) => next && setViewMode(next as ViewMode)} aria-label="View mode">
+              <ToggleGroupItem value="personal">Personal</ToggleGroupItem>
+              <ToggleGroupItem value="team">Team view</ToggleGroupItem>
+            </ToggleGroup>
+          )}
+          <Badge>{api.user.teamNode?.name ?? api.user.email}</Badge>
           <Button type="button" variant="ghost" size="sm" onClick={api.logout}>
             <LogOut size={15} /> Sign out
           </Button>
@@ -158,7 +160,7 @@ function App() {
 
       <aside className="sidebar">
         <div className="stack">
-          {nav.map((item) => {
+          {visibleNav.map((item) => {
             const Icon = item.icon;
             return (
               <Button
@@ -181,56 +183,46 @@ function App() {
         {api.error && <div className="form-error page-error">{api.error}</div>}
         <div className="page-header">
           <div>
-            <div className="eyebrow">{selectedNode ? nodePath(api.teamNodes, selectedNode) : "Mira team"}</div>
+            <div className="eyebrow">{viewMode === "team" ? "Read-only subordinate view" : api.user.role || "Personal workspace"}</div>
             <h1>{currentNav.label}</h1>
-            <p className="muted">API-backed tasks, meeting notes, and team rollups for the selected team node.</p>
+            <p className="muted">{viewMode === "team" ? "Subordinate stats and details for your team tree." : "Your own work content and activity stats."}</p>
           </div>
-          {(route === "summary" || route === "achievements") && <PeriodControl value={period} onChange={setPeriod} />}
+          {(route === "dashboard" || route === "stats") && <PeriodControl value={period} onChange={setPeriod} />}
         </div>
 
-        {!api.teamNodes.length ? (
-          <FirstTeamNode onCreate={api.createTeamNode} loading={api.loading} />
-        ) : (
-          <>
-            {route === "team" && (
-              <TeamViewPanel
-                nodes={api.teamNodes}
-                selectedNodeId={api.selectedNodeId}
-                teamView={api.teamView}
-                onSelect={api.setSelectedNodeId}
-                onCreate={api.createTeamNode}
-                onUpdate={api.updateTeamNode}
-                onDelete={api.deleteTeamNode}
-                onExport={api.exportWorkspace}
-                onImport={api.importWorkspace}
-                onReset={api.resetWorkspace}
-              />
-            )}
-            {route === "tasks" && (
-              <TasksView
-                tasks={api.tasks}
-                nodes={api.teamNodes}
-                selectedNodeId={api.selectedNodeId}
-                onCreate={api.createTask}
-                onUpdate={api.updateTask}
-                onDelete={api.deleteTask}
-              />
-            )}
-            {route === "notes" && (
-              <NotesView
-                notes={api.notes}
-                nodes={api.teamNodes}
-                selectedNodeId={api.selectedNodeId}
-                onCreate={api.createNote}
-                onUpdate={api.updateNote}
-                onDelete={api.deleteNote}
-              />
-            )}
-            {route === "summary" && <SummaryView tasks={api.teamView?.tasks ?? api.tasks} notes={api.teamView?.notes ?? api.notes} period={period} />}
-            {route === "achievements" && (
-              <AchievementsView tasks={api.teamView?.tasks ?? api.tasks} notes={api.teamView?.notes ?? api.notes} period={period} />
-            )}
-          </>
+        {route === "dashboard" && <DashboardView view={activeView} mode={viewMode} nodes={api.teamNodes} />}
+        {route === "tasks" && (
+          <TasksView
+            tasks={visibleTasks}
+            nodes={api.teamNodes}
+            readOnly={viewMode === "team"}
+            onCreate={api.createTask}
+            onUpdate={api.updateTask}
+            onDelete={api.deleteTask}
+          />
+        )}
+        {route === "notes" && (
+          <NotesView
+            notes={visibleNotes}
+            nodes={api.teamNodes}
+            readOnly={viewMode === "team"}
+            onCreate={api.createNote}
+            onUpdate={api.updateNote}
+            onDelete={api.deleteNote}
+          />
+        )}
+        {route === "stats" && <StatsView view={activeView} period={period} />}
+        {route === "settings" && api.user.canManageSettings && (
+          <SettingsView
+            nodes={api.teamNodes}
+            teamView={api.teamView}
+            onCreate={api.createTeamNode}
+            onUpdate={api.updateTeamNode}
+            onDelete={api.deleteTeamNode}
+            onExport={api.exportWorkspace}
+            onImport={api.importWorkspace}
+            onReset={api.resetWorkspace}
+          />
         )}
       </main>
     </div>
@@ -238,7 +230,7 @@ function App() {
 }
 
 function LoginScreen({ onLogin, error, loading }: { onLogin: (email: string, password: string) => Promise<void>; error: string; loading: boolean }) {
-  const [email, setEmail] = useState("admin@mira.local");
+  const [email, setEmail] = useState("manager@mira.local");
   const [password, setPassword] = useState("local-password");
 
   const submit = async (event: React.FormEvent) => {
@@ -251,11 +243,11 @@ function LoginScreen({ onLogin, error, loading }: { onLogin: (email: string, pas
       <Card className="stack login-card">
         <div className="login-brand">
           <span className="brand-mark">M</span>
-          Mira API
+          Mira
         </div>
         <div>
           <h1>Sign in</h1>
-          <p className="muted">Use the seeded superuser to manage the team workspace.</p>
+          <p className="muted">Mock users: manager@mira.local, alex@mira.local, sam@mira.local, admin@mira.local.</p>
         </div>
         {error && <div className="form-error">{error}</div>}
         <form className="stack" onSubmit={submit}>
@@ -276,213 +268,60 @@ function LoginScreen({ onLogin, error, loading }: { onLogin: (email: string, pas
   );
 }
 
-function TeamViewPanel({
-  nodes,
-  selectedNodeId,
-  teamView,
-  onSelect,
-  onCreate,
-  onUpdate,
-  onDelete,
-  onExport,
-  onImport,
-  onReset,
-}: {
-  nodes: TeamNode[];
-  selectedNodeId: string;
-  teamView: TeamView | null;
-  onSelect: (id: string) => void;
-  onCreate: (payload: { name: string; title?: string; parentId?: string }) => Promise<void>;
-  onUpdate: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
-  onExport: () => Promise<void>;
-  onImport: (file: File | undefined) => Promise<void>;
-  onReset: () => Promise<void>;
-}) {
-  const [draft, setDraft] = useState({ name: "", title: "", parentId: selectedNodeId || "root" });
-  const [editingId, setEditingId] = useState("");
-  const editingNode = nodes.find((node) => node.id === editingId);
-
-  useEffect(() => {
-    setDraft((current) => ({ ...current, parentId: selectedNodeId || "root" }));
-  }, [selectedNodeId]);
-
-  const save = async () => {
-    const name = draft.name.trim();
-    if (!name) return;
-    const payload = {
-      name,
-      title: draft.title.trim() || undefined,
-      parentId: draft.parentId === "root" ? undefined : draft.parentId,
-    };
-    if (editingNode) {
-      await onUpdate(editingNode.id, { ...payload, parentId: payload.parentId ?? null });
-      setEditingId("");
-    } else {
-      await onCreate(payload);
-    }
-    setDraft({ name: "", title: "", parentId: selectedNodeId || "root" });
-  };
-
-  const startEdit = (node: TeamNode) => {
-    setEditingId(node.id);
-    setDraft({ name: node.name, title: node.title ?? "", parentId: node.parentId ?? "root" });
-  };
-
+function DashboardView({ view, mode, nodes }: { view: WorkView | null; mode: ViewMode; nodes: TeamNode[] }) {
+  const tasks = view?.tasks ?? [];
+  const notes = view?.notes ?? [];
+  const dueTasks = tasks.filter((task) => task.status === "open" && task.dueDate).slice(0, 5);
   return (
-    <div className="grid team-grid">
+    <div className="stack">
+      <StatsGrid stats={buildStats(tasks, notes)} />
+      <div className="grid two-col work-grid">
+        <Card className="stack">
+          <div className="row-between">
+            <h2>{mode === "team" ? "Team tasks" : "My tasks"}</h2>
+            <Badge>{tasks.length} records</Badge>
+          </div>
+          <SummaryList
+            items={tasks.slice(0, 8).map((task) => ({
+              id: task.id,
+              date: task.completedAt ?? task.dueDate ?? task.createdAt,
+              title: task.title,
+              body: `${nodeLabel(nodes, task.ownerNodeId)} · ${priorityLabel(task.priority)} · ${task.status}`,
+            }))}
+          />
+        </Card>
+        <Card className="stack">
+          <div className="row-between">
+            <h2>{mode === "team" ? "Team notes" : "My notes"}</h2>
+            <Badge>{notes.length} notes</Badge>
+          </div>
+          <SummaryList items={notes.slice(0, 8).map((note) => ({ id: note.id, date: note.date, title: note.title, body: note.tags || firstLines(note.content) }))} />
+        </Card>
+      </div>
       <Card className="stack">
-        <div className="row-between">
-          <h2>Team tree</h2>
-          <Badge>{nodes.length} nodes</Badge>
-        </div>
-        <div className="team-tree">
-          {buildTreeRows(nodes).map(({ node, depth }) => (
-            <button
-              className={`team-node ${node.id === selectedNodeId ? "active" : ""}`}
-              key={node.id}
-              style={{ paddingLeft: 10 + depth * 18 }}
-              onClick={() => onSelect(node.id)}
-            >
-              <span>{node.name}</span>
-              <small>{node.title || "Team member"}</small>
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      <Card className="stack">
-        <div className="row-between">
-          <h2>{editingNode ? "Edit node" : "Add node"}</h2>
-          {editingNode && <Badge>{editingNode.name}</Badge>}
-        </div>
-        <Input value={draft.name} placeholder="Name" onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-        <Input value={draft.title} placeholder="Role or title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
-        <Select value={draft.parentId} onValueChange={(value) => setDraft({ ...draft, parentId: value })}>
-          <SelectTrigger>
-            <SelectValue placeholder="Parent node" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="root">Top level</SelectItem>
-            {nodes
-              .filter((node) => node.id !== editingId)
-              .map((node) => (
-                <SelectItem value={node.id} key={node.id}>
-                  {nodePath(nodes, node)}
-                </SelectItem>
-              ))}
-          </SelectContent>
-        </Select>
-        <div className="row-between">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setEditingId("");
-              setDraft({ name: "", title: "", parentId: selectedNodeId || "root" });
-            }}
-          >
-            Clear
-          </Button>
-          <Button type="button" disabled={!draft.name.trim()} onClick={save}>
-            {editingNode ? <Save size={15} /> : <Plus size={15} />} {editingNode ? "Save" : "Add"}
-          </Button>
-        </div>
-      </Card>
-
-      <Card className="stack">
-        <div className="row-between">
-          <h2>Selected node</h2>
-          <Badge>{teamView?.descendantIds.length ?? 0} in tree</Badge>
-        </div>
-        {teamView?.selectedNode ? (
-          <>
-            <div className="node-detail">
-              <Users size={18} />
-              <div>
-                <strong>{teamView.selectedNode.name}</strong>
-                <p className="muted">{teamView.selectedNode.title || "No title set"}</p>
-              </div>
-            </div>
-            <StatsGrid
-              stats={{
-                tasks: teamView.stats.totalTasks,
-                completedTasks: teamView.stats.completedTasks,
-                notes: teamView.stats.notes,
-                noteWords: teamView.notes.reduce((total, note) => total + wordCount(note.content), 0),
-                completionRate: teamView.stats.completionRate,
-              }}
-            />
-            <div className="item-actions">
-              <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(teamView.selectedNode!)}>
-                <Edit3 size={14} /> Edit
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => confirmAction("Delete this team node?", () => onDelete(teamView.selectedNode!.id))}>
-                <Trash2 size={14} /> Delete
-              </Button>
-            </div>
-          </>
-        ) : (
-          <EmptyState title="No node selected" text="Select a team node or create one." />
-        )}
-      </Card>
-
-      <Card className="stack workspace-tools">
-        <div className="row-between">
-          <h2>Workspace data</h2>
-          <Badge>JSON</Badge>
-        </div>
-        <p className="muted">Export, import, or reset the API-backed workspace.</p>
-        <div className="row tool-row">
-          <Button type="button" variant="secondary" onClick={onExport}>
-            <Download size={15} /> Export
-          </Button>
-          <label className="upload-button tool-upload">
-            <Upload size={15} />
-            Import
-            <Input type="file" accept="application/json,.json" onChange={(event) => onImport(event.target.files?.[0])} />
-          </label>
-          <Button type="button" variant="ghost" onClick={() => confirmAction("Reset the workspace? This deletes all tasks, notes, and team nodes.", onReset)}>
-            <Trash2 size={15} /> Reset
-          </Button>
-        </div>
+        <h2>Due soon</h2>
+        <SummaryList items={dueTasks.map((task) => ({ id: task.id, date: task.dueDate!, title: task.title, body: task.details }))} />
       </Card>
     </div>
-  );
-}
-
-function FirstTeamNode({ onCreate, loading }: { onCreate: (payload: { name: string; title?: string }) => Promise<void>; loading: boolean }) {
-  const [name, setName] = useState("Team");
-  const [title, setTitle] = useState("Management root");
-  return (
-    <Card className="stack first-node">
-      <h2>Create the first team node</h2>
-      <p className="muted">Tasks and notes need an owner node before team mode can start.</p>
-      <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Node name" />
-      <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Role or title" />
-      <Button type="button" disabled={!name.trim() || loading} onClick={() => onCreate({ name, title })}>
-        <Plus size={15} /> Create node
-      </Button>
-    </Card>
   );
 }
 
 function TasksView({
   tasks,
   nodes,
-  selectedNodeId,
+  readOnly,
   onCreate,
   onUpdate,
   onDelete,
 }: {
   tasks: Task[];
   nodes: TeamNode[];
-  selectedNodeId: string;
-  onCreate: (payload: { ownerNodeId: string; title: string; details: string; priority: TaskPriority; dueDate?: string }) => Promise<void>;
+  readOnly: boolean;
+  onCreate: (payload: { title: string; details: string; priority: TaskPriority; dueDate?: string }) => Promise<void>;
   onUpdate: (id: string, payload: { title?: string; details?: string; status?: TaskStatus; priority?: TaskPriority; dueDate?: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState({ title: "", details: "", ownerNodeId: selectedNodeId, priority: "normal" as TaskPriority, dueDate: "" });
+  const [draft, setDraft] = useState({ title: "", details: "", priority: "normal" as TaskPriority, dueDate: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | TaskStatus>("all");
@@ -495,81 +334,59 @@ function TasksView({
     return matchesQuery && matchesStatus && matchesPriority;
   });
 
-  useEffect(() => {
-    setDraft((current) => ({ ...current, ownerNodeId: selectedNodeId }));
-  }, [selectedNodeId]);
-
   const saveTask = useCallback(async () => {
     const title = draft.title.trim();
-    if (!title) return;
+    if (!title || readOnly) return;
     if (editingTask) {
       await onUpdate(editingTask.id, { title, details: draft.details.trim(), priority: draft.priority, dueDate: draft.dueDate || null });
       setEditingId(null);
     } else {
-      await onCreate({ ownerNodeId: draft.ownerNodeId, title, details: draft.details.trim(), priority: draft.priority, dueDate: draft.dueDate || undefined });
+      await onCreate({ title, details: draft.details.trim(), priority: draft.priority, dueDate: draft.dueDate || undefined });
     }
-    setDraft({ title: "", details: "", ownerNodeId: selectedNodeId, priority: "normal", dueDate: "" });
-  }, [draft, editingTask, onCreate, onUpdate, selectedNodeId]);
-
-  const startEdit = (task: Task) => {
-    setEditingId(task.id);
-    setDraft({ title: task.title, details: task.details, ownerNodeId: task.ownerNodeId, priority: task.priority, dueDate: task.dueDate ? toDateInput(task.dueDate) : "" });
-  };
+    setDraft({ title: "", details: "", priority: "normal", dueDate: "" });
+  }, [draft, editingTask, onCreate, onUpdate, readOnly]);
 
   const newTask = useCallback(() => {
     setEditingId(null);
-    setDraft({ title: "", details: "", ownerNodeId: selectedNodeId, priority: "normal", dueDate: "" });
-  }, [selectedNodeId]);
+    setDraft({ title: "", details: "", priority: "normal", dueDate: "" });
+  }, []);
 
-  useKeyboardShortcuts({ onSave: saveTask, onNew: newTask });
+  const startEdit = (task: Task) => {
+    if (readOnly) return;
+    setEditingId(task.id);
+    setDraft({ title: task.title, details: task.details, priority: task.priority, dueDate: task.dueDate ? toDateInput(task.dueDate) : "" });
+  };
+
+  useKeyboardShortcuts({ onSave: saveTask, onNew: newTask, enabled: !readOnly });
 
   return (
     <div className="grid two-col work-grid">
-      <Card className="stack editor-panel">
-        <div className="row-between">
-          <h2>{editingTask ? "Edit task" : "New task"}</h2>
-          {editingTask && <Badge>{formatDate(editingTask.createdAt)}</Badge>}
-        </div>
-        <OwnerSelect nodes={nodes} value={draft.ownerNodeId} onChange={(ownerNodeId) => setDraft({ ...draft, ownerNodeId })} disabled={!!editingTask} />
-        <Input value={draft.title} placeholder="Task title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
-        <div className="editor-fields">
-          <Select value={draft.priority} onValueChange={(priority) => setDraft({ ...draft, priority: priority as TaskPriority })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Priority" />
-            </SelectTrigger>
-            <SelectContent>
-              {(["low", "normal", "high", "urgent"] as TaskPriority[]).map((priority) => (
-                <SelectItem value={priority} key={priority}>
-                  {priorityLabel(priority)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input type="date" value={draft.dueDate} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} />
-        </div>
-        <Textarea
-          className="compact"
-          value={draft.details}
-          placeholder="Details, blockers, links, or acceptance notes"
-          onChange={(event) => setDraft({ ...draft, details: event.target.value })}
-        />
-        <div className="row-between">
-          <Button
-            variant="secondary"
-            type="button"
-            onClick={newTask}
-          >
-            Clear
-          </Button>
-          <Button type="button" disabled={!draft.title.trim()} onClick={saveTask}>
-            {editingTask ? <Save size={16} /> : <Plus size={16} />} {editingTask ? "Save task" : "Add task"}
-          </Button>
-        </div>
-      </Card>
+      {!readOnly && (
+        <Card className="stack editor-panel">
+          <div className="row-between">
+            <h2>{editingTask ? "Edit task" : "New task"}</h2>
+            {editingTask && <Badge>{formatDate(editingTask.createdAt)}</Badge>}
+          </div>
+          <Input value={draft.title} placeholder="Task title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+          <div className="editor-fields">
+            <PrioritySelect value={draft.priority} onChange={(priority) => setDraft({ ...draft, priority })} />
+            <Input type="date" value={draft.dueDate} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} />
+          </div>
+          <Textarea className="compact" value={draft.details} placeholder="Details, blockers, links, or acceptance notes" onChange={(event) => setDraft({ ...draft, details: event.target.value })} />
+          <div className="row-between">
+            <Button variant="secondary" type="button" onClick={newTask}>
+              Clear
+            </Button>
+            <Button type="button" disabled={!draft.title.trim()} onClick={saveTask}>
+              {editingTask ? <Save size={16} /> : <Plus size={16} />} {editingTask ? "Save task" : "Add task"}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       <Card className="stack">
         <div className="row-between">
-          <h2>Task list</h2>
+          <h2>{readOnly ? "Team task details" : "Task list"}</h2>
           <Badge>{tasks.filter((task) => task.status === "complete").length} complete</Badge>
         </div>
         <div className="search-field">
@@ -578,9 +395,7 @@ function TasksView({
         </div>
         <div className="filter-row">
           <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as "all" | TaskStatus)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
+            <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All status</SelectItem>
               <SelectItem value="open">Open</SelectItem>
@@ -588,15 +403,11 @@ function TasksView({
             </SelectContent>
           </Select>
           <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as "all" | TaskPriority)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Priority" />
-            </SelectTrigger>
+            <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All priority</SelectItem>
               {(["low", "normal", "high", "urgent"] as TaskPriority[]).map((priority) => (
-                <SelectItem value={priority} key={priority}>
-                  {priorityLabel(priority)}
-                </SelectItem>
+                <SelectItem value={priority} key={priority}>{priorityLabel(priority)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -606,7 +417,7 @@ function TasksView({
             <div className={`todo task-row ${task.status === "complete" ? "done" : ""}`} key={task.id}>
               <div className="row-between">
                 <label className="row task-check">
-                  <Checkbox checked={task.status === "complete"} onCheckedChange={(checked) => onUpdate(task.id, { status: checked ? "complete" : "open" })} />
+                  {!readOnly && <Checkbox checked={task.status === "complete"} onCheckedChange={(checked) => onUpdate(task.id, { status: checked ? "complete" : "open" })} />}
                   <span className="todo-title">{task.title}</span>
                 </label>
                 <div className="row badge-row">
@@ -617,16 +428,20 @@ function TasksView({
               {task.details && <p className="muted item-body">{task.details}</p>}
               <div className="item-actions">
                 <span className="muted">{task.dueDate ? `Due ${formatDate(task.dueDate)}` : formatDate(task.completedAt ?? task.createdAt)}</span>
-                <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(task)}>
-                  <Edit3 size={14} /> Edit
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => confirmAction("Delete this task?", () => onDelete(task.id))}>
-                  <Trash2 size={14} /> Delete
-                </Button>
+                {!readOnly && (
+                  <>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(task)}>
+                      <Edit3 size={14} /> Edit
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => confirmAction("Delete this task?", () => onDelete(task.id))}>
+                      <Trash2 size={14} /> Delete
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           ))}
-          {!visibleTasks.length && <EmptyState title="No tasks found" text="Add a task or adjust the search." actionLabel="New task" onAction={newTask} />}
+          {!visibleTasks.length && <EmptyState title="No tasks found" text="Add a task or adjust the search." actionLabel={readOnly ? undefined : "New task"} onAction={newTask} />}
         </div>
       </Card>
     </div>
@@ -636,58 +451,47 @@ function TasksView({
 function NotesView({
   notes,
   nodes,
-  selectedNodeId,
+  readOnly,
   onCreate,
   onUpdate,
   onDelete,
 }: {
   notes: MeetingNote[];
   nodes: TeamNode[];
-  selectedNodeId: string;
-  onCreate: (payload: { ownerNodeId: string; title: string; date: string; content: string; tags: string }) => Promise<MeetingNote>;
+  readOnly: boolean;
+  onCreate: (payload: { title: string; date: string; content: string; tags: string }) => Promise<MeetingNote>;
   onUpdate: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
   const [activeId, setActiveId] = useState(notes[0]?.id ?? "");
   const activeNote = notes.find((note) => note.id === activeId) ?? notes[0];
-  const [draft, setDraft] = useState(() => activeNote ?? createBlankNote(selectedNodeId));
+  const [draft, setDraft] = useState(() => activeNote ?? createBlankNote());
   const [uploadError, setUploadError] = useState("");
 
   useEffect(() => {
     if (activeNote) setDraft({ ...activeNote, date: toDateInput(activeNote.date) });
   }, [activeNote?.id]);
 
-  useEffect(() => {
-    if (!activeNote) setDraft(createBlankNote(selectedNodeId));
-  }, [selectedNodeId, activeNote]);
-
   const saveNote = useCallback(async () => {
+    if (readOnly) return;
     const title = draft.title.trim() || "Untitled meeting";
     if (activeNote) {
       await onUpdate(activeNote.id, { title, date: draft.date, content: draft.content, tags: draft.tags });
     } else {
-      const created = await onCreate({ ownerNodeId: draft.ownerNodeId, title, date: draft.date, content: draft.content, tags: draft.tags });
+      const created = await onCreate({ title, date: draft.date, content: draft.content, tags: draft.tags });
       setActiveId(created.id);
     }
-  }, [activeNote, draft, onCreate, onUpdate]);
+  }, [activeNote, draft, onCreate, onUpdate, readOnly]);
 
   const newNote = useCallback(() => {
-    const note = createBlankNote(selectedNodeId);
-    setDraft(note);
+    setDraft(createBlankNote());
     setActiveId("");
-  }, [selectedNodeId]);
+  }, []);
 
-  useKeyboardShortcuts({ onSave: saveNote, onNew: newNote });
-
-  const deleteNote = async (noteId: string) => {
-    await onDelete(noteId);
-    const next = notes.find((note) => note.id !== noteId);
-    setActiveId(next?.id ?? "");
-    setDraft(next ? { ...next, date: toDateInput(next.date) } : createBlankNote(selectedNodeId));
-  };
+  useKeyboardShortcuts({ onSave: saveNote, onNew: newNote, enabled: !readOnly });
 
   const uploadNote = async (file: File | undefined) => {
-    if (!file) return;
+    if (!file || readOnly) return;
     setUploadError("");
     if (!/\.(md|markdown|txt)$/i.test(file.name)) {
       setUploadError("Only .md, .markdown, and .txt files are supported.");
@@ -696,7 +500,7 @@ function NotesView({
     try {
       const content = await file.text();
       const title = file.name.replace(/\.(md|markdown|txt)$/i, "");
-      const created = await onCreate({ ownerNodeId: selectedNodeId, title, date: today(), content, tags: "" });
+      const created = await onCreate({ title, date: today(), content, tags: "" });
       setActiveId(created.id);
     } catch {
       setUploadError("This file could not be read.");
@@ -707,16 +511,20 @@ function NotesView({
     <div className="grid notes-grid">
       <Card className="stack note-list">
         <div className="row-between">
-          <h2>Notes</h2>
-          <Button type="button" size="sm" onClick={newNote}>
-            <Plus size={15} /> New
-          </Button>
+          <h2>{readOnly ? "Team notes" : "Notes"}</h2>
+          {!readOnly && (
+            <Button type="button" size="sm" onClick={newNote}>
+              <Plus size={15} /> New
+            </Button>
+          )}
         </div>
-        <label className="upload-button">
-          <Upload size={15} />
-          Upload markdown
-          <Input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={(event) => uploadNote(event.target.files?.[0])} />
-        </label>
+        {!readOnly && (
+          <label className="upload-button">
+            <Upload size={15} />
+            Upload markdown
+            <Input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={(event) => uploadNote(event.target.files?.[0])} />
+          </label>
+        )}
         {uploadError && <div className="form-error">{uploadError}</div>}
         <div className="item-list">
           {notes.map((note) => (
@@ -726,7 +534,7 @@ function NotesView({
               {note.tags && <small>{note.tags}</small>}
             </button>
           ))}
-          {!notes.length && <EmptyState title="No notes yet" text="Create a note or upload a markdown file." actionLabel="New note" onAction={newNote} />}
+          {!notes.length && <EmptyState title="No notes yet" text="Create a note or upload a markdown file." actionLabel={readOnly ? undefined : "New note"} onAction={newNote} />}
         </div>
       </Card>
 
@@ -735,21 +543,22 @@ function NotesView({
           <h2>Markdown editor</h2>
           <Badge>{formatDate(draft.date)}</Badge>
         </div>
-        <OwnerSelect nodes={nodes} value={draft.ownerNodeId} onChange={(ownerNodeId) => setDraft({ ...draft, ownerNodeId })} disabled={!!activeNote} />
         <div className="editor-fields">
-          <Input value={draft.title} placeholder="Meeting title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
-          <Input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
+          <Input disabled={readOnly} value={draft.title} placeholder="Meeting title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+          <Input disabled={readOnly} type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
         </div>
-        <Input value={draft.tags} placeholder="Tags, comma separated" onChange={(event) => setDraft({ ...draft, tags: event.target.value })} />
-        <Textarea className="markdown-source" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
-        <div className="row-between">
-          <Button type="button" variant="secondary" disabled={!activeNote} onClick={() => activeNote && confirmAction("Delete this note?", () => deleteNote(activeNote.id))}>
-            <Trash2 size={15} /> Delete
-          </Button>
-          <Button type="button" onClick={saveNote}>
-            <Save size={15} /> Save note
-          </Button>
-        </div>
+        <Input disabled={readOnly} value={draft.tags} placeholder="Tags, comma separated" onChange={(event) => setDraft({ ...draft, tags: event.target.value })} />
+        <Textarea disabled={readOnly} className="markdown-source" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
+        {!readOnly && (
+          <div className="row-between">
+            <Button type="button" variant="secondary" disabled={!activeNote} onClick={() => activeNote && confirmAction("Delete this note?", () => onDelete(activeNote.id))}>
+              <Trash2 size={15} /> Delete
+            </Button>
+            <Button type="button" onClick={saveNote}>
+              <Save size={15} /> Save note
+            </Button>
+          </div>
+        )}
       </Card>
 
       <Card className="stack markdown-preview-card">
@@ -760,14 +569,14 @@ function NotesView({
   );
 }
 
-function SummaryView({ tasks, notes, period }: { tasks: Task[]; notes: MeetingNote[]; period: Period }) {
-  const stats = buildStats(tasks, notes);
+function StatsView({ view, period }: { view: WorkView | null; period: Period }) {
+  const tasks = view?.tasks ?? [];
+  const notes = view?.notes ?? [];
   const completedTasks = tasks.filter((task) => task.status === "complete");
   const openTasks = tasks.filter((task) => task.status === "open");
-
   return (
     <div className="stack">
-      <StatsGrid stats={stats} />
+      <StatsGrid stats={buildStats(tasks, notes)} />
       <Card className="stack summary-panel">
         <div className="row-between">
           <h2>{periodLabel(period)} summary</h2>
@@ -784,85 +593,163 @@ function SummaryView({ tasks, notes, period }: { tasks: Task[]; notes: MeetingNo
         </div>
         <div className="summary-section">
           <h3>Open tasks</h3>
-          <SummaryList items={openTasks.map((task) => ({ id: task.id, date: task.createdAt, title: task.title, body: task.details }))} />
+          <SummaryList items={openTasks.map((task) => ({ id: task.id, date: task.dueDate ?? task.createdAt, title: task.title, body: task.details }))} />
         </div>
         <div className="summary-section">
           <h3>Meeting notes</h3>
           <SummaryList items={notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: firstLines(note.content) }))} />
         </div>
       </Card>
+      <AchievementsView tasks={tasks} notes={notes} />
     </div>
   );
 }
 
-function AchievementsView({ tasks, notes, period }: { tasks: Task[]; notes: MeetingNote[]; period: Period }) {
+function AchievementsView({ tasks, notes }: { tasks: Task[]; notes: MeetingNote[] }) {
   const stats = buildStats(tasks, notes);
   const achievements = [
-    {
-      id: "completed",
-      title: "Execution streak",
-      value: stats.completedTasks,
-      target: 5,
-      text: "Completed tasks in the selected period.",
-      sources: tasks.filter((task) => task.status === "complete").map((task) => task.title),
-    },
-    {
-      id: "notes",
-      title: "Meeting memory",
-      value: stats.notes,
-      target: 3,
-      text: "Saved meeting notes with dates and content.",
-      sources: notes.map((note) => note.title),
-    },
-    {
-      id: "archive",
-      title: "Historical record",
-      value: tasks.length + notes.length,
-      target: 10,
-      text: "Total historical task and note records.",
-      sources: [...tasks.map((task) => task.title), ...notes.map((note) => note.title)],
-    },
+    { id: "completed", title: "Execution streak", value: stats.completedTasks, target: 5, text: "Completed tasks.", sources: tasks.filter((task) => task.status === "complete").map((task) => task.title) },
+    { id: "notes", title: "Meeting memory", value: stats.notes, target: 3, text: "Saved meeting notes.", sources: notes.map((note) => note.title) },
+    { id: "archive", title: "Historical record", value: tasks.length + notes.length, target: 10, text: "Total task and note records.", sources: [...tasks.map((task) => task.title), ...notes.map((note) => note.title)] },
   ];
+  return (
+    <div className="grid three-col">
+      {achievements.map((achievement) => {
+        const unlocked = achievement.value >= achievement.target;
+        return (
+          <div className={`badge-card ${unlocked ? "unlocked" : ""}`} key={achievement.id}>
+            <div className="row-between">
+              <CheckCircle2 className="achievement-icon" />
+              <Badge>{achievement.value} / {achievement.target}</Badge>
+            </div>
+            <h2>{achievement.title}</h2>
+            <p className="muted">{achievement.text}</p>
+            <details className="achievement-detail">
+              <summary>Source records</summary>
+              <ul>
+                {achievement.sources.slice(0, 6).map((source) => <li key={source}>{source}</li>)}
+                {!achievement.sources.length && <li>No source records yet</li>}
+              </ul>
+            </details>
+            <div className="progress-track"><span style={{ width: `${Math.min(100, (achievement.value / achievement.target) * 100)}%` }} /></div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SettingsView({
+  nodes,
+  teamView,
+  onCreate,
+  onUpdate,
+  onDelete,
+  onExport,
+  onImport,
+  onReset,
+}: {
+  nodes: TeamNode[];
+  teamView: WorkView | null;
+  onCreate: (payload: { name: string; title?: string; parentId?: string }) => Promise<void>;
+  onUpdate: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onExport: () => Promise<void>;
+  onImport: (file: File | undefined) => Promise<void>;
+  onReset: () => Promise<void>;
+}) {
+  const [draft, setDraft] = useState({ name: "", title: "", parentId: "root" });
+  const [editingId, setEditingId] = useState("");
+  const editingNode = nodes.find((node) => node.id === editingId);
+
+  const save = async () => {
+    const name = draft.name.trim();
+    if (!name) return;
+    const payload = { name, title: draft.title.trim() || undefined, parentId: draft.parentId === "root" ? undefined : draft.parentId };
+    if (editingNode) {
+      await onUpdate(editingNode.id, { ...payload, parentId: payload.parentId ?? null });
+      setEditingId("");
+    } else {
+      await onCreate(payload);
+    }
+    setDraft({ name: "", title: "", parentId: "root" });
+  };
 
   return (
-    <div className="stack">
-      <StatsGrid stats={stats} />
-      <div className="grid three-col">
-        {achievements.map((achievement) => {
-          const unlocked = achievement.value >= achievement.target;
-          return (
-            <div className={`badge-card ${unlocked ? "unlocked" : ""}`} key={achievement.id}>
-              <div className="row-between">
-                <CheckCircle2 className="achievement-icon" />
-                <Badge>{achievement.value} / {achievement.target}</Badge>
-              </div>
-              <h2>{achievement.title}</h2>
-              <p className="muted">{achievement.text}</p>
-              <details className="achievement-detail">
-                <summary>Source records</summary>
-                <ul>
-                  {achievement.sources.slice(0, 6).map((source) => (
-                    <li key={source}>{source}</li>
-                  ))}
-                  {!achievement.sources.length && <li>No source records yet</li>}
-                </ul>
-              </details>
-              <div className="progress-track">
-                <span style={{ width: `${Math.min(100, (achievement.value / achievement.target) * 100)}%` }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+    <div className="grid team-grid">
       <Card className="stack">
-        <h2>{periodLabel(period)} history</h2>
-        <SummaryList
-          items={[
-            ...tasks.map((task) => ({ id: task.id, date: task.completedAt ?? task.createdAt, title: task.title, body: task.status })),
-            ...notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: "meeting note" })),
-          ].sort((a, b) => b.date.localeCompare(a.date))}
-        />
+        <div className="row-between">
+          <h2>Team tree</h2>
+          <Badge>{nodes.length} nodes</Badge>
+        </div>
+        <div className="team-tree">
+          {buildTreeRows(nodes).map(({ node, depth }) => (
+            <button
+              className={`team-node ${node.id === editingId ? "active" : ""}`}
+              key={node.id}
+              style={{ paddingLeft: 10 + depth * 18 }}
+              onClick={() => {
+                setEditingId(node.id);
+                setDraft({ name: node.name, title: node.title ?? "", parentId: node.parentId ?? "root" });
+              }}
+            >
+              <span>{node.name}</span>
+              <small>{node.title || "Untitled role"}</small>
+            </button>
+          ))}
+        </div>
       </Card>
+      <Card className="stack">
+        <div className="row-between">
+          <h2>{editingNode ? "Edit node" : "Add node"}</h2>
+          {editingNode && <Badge>{editingNode.name}</Badge>}
+        </div>
+        <Input value={draft.name} placeholder="Name" onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+        <Input value={draft.title} placeholder="Role or title, any text" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+        <Select value={draft.parentId} onValueChange={(value) => setDraft({ ...draft, parentId: value })}>
+          <SelectTrigger><SelectValue placeholder="Parent node" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="root">Top level</SelectItem>
+            {nodes.filter((node) => node.id !== editingId).map((node) => (
+              <SelectItem value={node.id} key={node.id}>{nodePath(nodes, node)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="row-between">
+          <Button type="button" variant="secondary" onClick={() => { setEditingId(""); setDraft({ name: "", title: "", parentId: "root" }); }}>Clear</Button>
+          <Button type="button" disabled={!draft.name.trim()} onClick={save}>{editingNode ? <Save size={15} /> : <Plus size={15} />} {editingNode ? "Save" : "Add"}</Button>
+        </div>
+        {editingNode && (
+          <Button type="button" variant="ghost" onClick={() => confirmAction("Delete this team node?", () => onDelete(editingNode.id))}>
+            <Trash2 size={15} /> Delete selected node
+          </Button>
+        )}
+      </Card>
+      <Card className="stack">
+        <h2>Workspace data</h2>
+        <p className="muted">Superuser-only JSON tools for testing and local reset.</p>
+        <div className="row tool-row">
+          <Button type="button" variant="secondary" onClick={onExport}><Download size={15} /> Export</Button>
+          <label className="upload-button tool-upload">
+            <Upload size={15} /> Import
+            <Input type="file" accept="application/json,.json" onChange={(event) => onImport(event.target.files?.[0])} />
+          </label>
+          <Button type="button" variant="ghost" onClick={() => confirmAction("Reset the workspace? This deletes all tasks, notes, and team nodes.", onReset)}>
+            <Trash2 size={15} /> Reset
+          </Button>
+        </div>
+        <InlineStats stats={teamView ? buildStats(teamView.tasks, teamView.notes) : buildStats([], [])} />
+      </Card>
+    </div>
+  );
+}
+
+function InlineStats({ stats }: { stats: ReturnType<typeof buildStats> }) {
+  return (
+    <div className="inline-stats">
+      <div><span>{stats.tasks}</span><small>Tasks</small></div>
+      <div><span>{stats.notes}</span><small>Notes</small></div>
+      <div><span>{stats.completionRate}%</span><small>Completion</small></div>
     </div>
   );
 }
@@ -870,65 +757,23 @@ function AchievementsView({ tasks, notes, period }: { tasks: Task[]; notes: Meet
 function StatsGrid({ stats }: { stats: ReturnType<typeof buildStats> }) {
   return (
     <div className="grid three-col">
-      <Card className="metric-card">
-        <h2>Total tasks</h2>
-        <div className="metric-value">{stats.tasks}</div>
-        <p className="muted">{stats.completedTasks} completed</p>
-      </Card>
-      <Card className="metric-card">
-        <h2>Meeting notes</h2>
-        <div className="metric-value">{stats.notes}</div>
-        <p className="muted">{stats.noteWords} note words</p>
-      </Card>
-      <Card className="metric-card">
-        <h2>Completion</h2>
-        <div className="metric-value">{stats.completionRate}%</div>
-        <p className="muted">Selected period</p>
-      </Card>
+      <Card className="metric-card"><h2>Total tasks</h2><div className="metric-value">{stats.tasks}</div><p className="muted">{stats.completedTasks} completed</p></Card>
+      <Card className="metric-card"><h2>Meeting notes</h2><div className="metric-value">{stats.notes}</div><p className="muted">{stats.noteWords} note words</p></Card>
+      <Card className="metric-card"><h2>Completion</h2><div className="metric-value">{stats.completionRate}%</div><p className="muted">Selected period</p></Card>
     </div>
   );
 }
 
-function NodeSelect({ nodes, value, onChange }: { nodes: TeamNode[]; value: string; onChange: (value: string) => void }) {
+function PrioritySelect({ value, onChange }: { value: TaskPriority; onChange: (value: TaskPriority) => void }) {
   return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="member-select">
-        <SelectValue placeholder="Select node" />
-      </SelectTrigger>
+    <Select value={value} onValueChange={(priority) => onChange(priority as TaskPriority)}>
+      <SelectTrigger><SelectValue placeholder="Priority" /></SelectTrigger>
       <SelectContent>
-        {nodes.map((node) => (
-          <SelectItem value={node.id} key={node.id}>
-            {nodePath(nodes, node)}
-          </SelectItem>
+        {(["low", "normal", "high", "urgent"] as TaskPriority[]).map((priority) => (
+          <SelectItem value={priority} key={priority}>{priorityLabel(priority)}</SelectItem>
         ))}
       </SelectContent>
     </Select>
-  );
-}
-
-function OwnerSelect({ nodes, value, onChange, disabled }: { nodes: TeamNode[]; value: string; onChange: (value: string) => void; disabled?: boolean }) {
-  return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
-      <SelectTrigger>
-        <SelectValue placeholder="Owner" />
-      </SelectTrigger>
-      <SelectContent>
-        {nodes.map((node) => (
-          <SelectItem value={node.id} key={node.id}>
-            {nodePath(nodes, node)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function ScopeControl({ value, onChange }: { value: Scope; onChange: (value: Scope) => void }) {
-  return (
-    <ToggleGroup type="single" value={value} onValueChange={(next) => next && onChange(next as Scope)} aria-label="Team scope">
-      <ToggleGroupItem value="self">Self</ToggleGroupItem>
-      <ToggleGroupItem value="tree">Tree</ToggleGroupItem>
-    </ToggleGroup>
   );
 }
 
@@ -949,10 +794,7 @@ function SummaryList({ items }: { items: Array<{ id: string; date: string; title
       {items.map((item) => (
         <div className="summary-item" key={item.id}>
           <time>{formatDate(item.date)}</time>
-          <div>
-            <strong>{item.title}</strong>
-            {item.body && <p className="muted">{item.body}</p>}
-          </div>
+          <div><strong>{item.title}</strong>{item.body && <p className="muted">{item.body}</p>}</div>
         </div>
       ))}
     </div>
@@ -965,11 +807,7 @@ function EmptyState({ title, text, actionLabel, onAction }: { title: string; tex
       <ListChecks size={18} />
       <strong>{title}</strong>
       <span>{text}</span>
-      {actionLabel && onAction && (
-        <Button type="button" size="sm" variant="secondary" onClick={onAction}>
-          <Plus size={14} /> {actionLabel}
-        </Button>
-      )}
+      {actionLabel && onAction && <Button type="button" size="sm" variant="secondary" onClick={onAction}><Plus size={14} /> {actionLabel}</Button>}
     </div>
   );
 }
@@ -978,65 +816,43 @@ function useMiraApi() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
   const [user, setUser] = useState<User | null>(null);
   const [teamNodes, setTeamNodes] = useState<TeamNode[]>([]);
-  const [selectedNodeId, setSelectedNodeId] = useState("");
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [notes, setNotes] = useState<MeetingNote[]>([]);
-  const [teamView, setTeamView] = useState<TeamView | null>(null);
+  const [workView, setWorkView] = useState<WorkView | null>(null);
+  const [teamView, setTeamView] = useState<WorkView | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
 
-  const request = useCallback(
-    async <T,>(path: string, options: RequestInit = {}) => {
-      const headers = new Headers(options.headers);
-      headers.set("Content-Type", "application/json");
-      if (token) headers.set("Authorization", `Bearer ${token}`);
-      const response = await fetch(`${API_URL}${path}`, { ...options, headers });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.message || body.detail || `Request failed: ${response.status}`);
-      }
-      return (await response.json()) as T;
-    },
-    [token],
-  );
+  const request = useCallback(async <T,>(path: string, options: RequestInit = {}) => {
+    const headers = new Headers(options.headers);
+    headers.set("Content-Type", "application/json");
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.message || body.detail || `Request failed: ${response.status}`);
+    }
+    return (await response.json()) as T;
+  }, [token]);
 
-  const refresh = useCallback(async () => {
+  const refreshUser = useCallback(async () => {
+    const current = await request<User>("/auth/me");
+    setUser(current);
+    return current;
+  }, [request]);
+
+  const loadWorkspace = useCallback(async (period: Period) => {
     try {
       setError("");
-      const nodes = await request<TeamNode[]>("/team/tree");
+      const current = user ?? await refreshUser();
+      const [nodes, own] = await Promise.all([request<TeamNode[]>("/team/tree"), request<WorkView>(`/me/work?period=${period}`)]);
       setTeamNodes(nodes);
-      setSelectedNodeId((current) => current || nodes[0]?.id || "");
+      setWorkView(own);
+      if (current.canViewTeam) setTeamView(await request<WorkView>(`/me/team-view?period=${period}`));
+      else setTeamView(null);
     } catch (err) {
       setError(errorMessage(err));
     }
-  }, [request]);
-
-  const loadWork = useCallback(
-    async (scope: Scope, period: Period) => {
-      if (!selectedNodeId) {
-        setTasks([]);
-        setNotes([]);
-        setTeamView(null);
-        return;
-      }
-      try {
-        setError("");
-        const query = `nodeId=${encodeURIComponent(selectedNodeId)}&scope=${scope}`;
-        const [taskData, noteData, viewData] = await Promise.all([
-          request<Task[]>(`/tasks?${query}`),
-          request<MeetingNote[]>(`/notes?${query}`),
-          request<TeamView>(`/team/view?nodeId=${encodeURIComponent(selectedNodeId)}&period=${period}`),
-        ]);
-        setTasks(taskData);
-        setNotes(noteData);
-        setTeamView(viewData);
-      } catch (err) {
-        setError(errorMessage(err));
-      }
-    },
-    [request, selectedNodeId],
-  );
+  }, [refreshUser, request, user]);
 
   const login = async (email: string, password: string) => {
     setLoading(true);
@@ -1047,10 +863,7 @@ function useMiraApi() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.message || "Unable to sign in");
-      }
+      if (!response.ok) throw new Error("Unable to sign in");
       const data = (await response.json()) as { accessToken: string; user: User };
       localStorage.setItem(TOKEN_KEY, data.accessToken);
       setToken(data.accessToken);
@@ -1067,25 +880,20 @@ function useMiraApi() {
     setToken("");
     setUser(null);
     setTeamNodes([]);
-    setSelectedNodeId("");
-    setTasks([]);
-    setNotes([]);
+    setWorkView(null);
     setTeamView(null);
   };
 
   useEffect(() => {
     if (!token) return;
-    void request<User>("/auth/me")
-      .then(setUser)
-      .catch(() => logout());
-  }, [token, request]);
+    void refreshUser().catch(() => logout());
+  }, [token, refreshUser]);
 
   const mutate = async (operation: () => Promise<unknown>) => {
     setLoading(true);
     try {
       setError("");
       await operation();
-      await refresh();
       setRevision((current) => current + 1);
     } catch (err) {
       setError(errorMessage(err));
@@ -1095,21 +903,8 @@ function useMiraApi() {
   };
 
   const exportWorkspace = async () => {
-    setLoading(true);
-    try {
-      setError("");
-      const [allTasks, allNotes] = await Promise.all([request<Task[]>("/tasks"), request<MeetingNote[]>("/notes")]);
-      downloadJson({
-        exportedAt: new Date().toISOString(),
-        teamNodes,
-        tasks: allTasks,
-        notes: allNotes,
-      } satisfies WorkspaceExport);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    const [allTasks, allNotes] = await Promise.all([request<Task[]>("/tasks"), request<MeetingNote[]>("/notes")]);
+    downloadJson({ exportedAt: new Date().toISOString(), teamNodes, tasks: allTasks, notes: allNotes });
   };
 
   const importWorkspace = async (file: File | undefined) => {
@@ -1118,150 +913,85 @@ function useMiraApi() {
       setError("Only .json workspace files are supported.");
       return;
     }
-
-    setLoading(true);
-    try {
-      setError("");
+    await mutate(async () => {
       const payload = parseWorkspaceExport(await file.text());
       const idMap = new Map<string, string>();
       for (const node of sortNodesForImport(payload.teamNodes)) {
-        const created = await request<TeamNode>("/team/nodes", {
-          method: "POST",
-          body: JSON.stringify({
-            name: node.name,
-            title: node.title || undefined,
-            parentId: node.parentId ? idMap.get(node.parentId) : undefined,
-          }),
-        });
+        const created = await request<TeamNode>("/team/nodes", { method: "POST", body: JSON.stringify({ name: node.name, title: node.title || undefined, parentId: node.parentId ? idMap.get(node.parentId) : undefined }) });
         idMap.set(node.id, created.id);
       }
-
       for (const task of payload.tasks) {
         const ownerNodeId = idMap.get(task.ownerNodeId);
         if (!ownerNodeId) continue;
-        const created = await request<Task>("/tasks", {
-          method: "POST",
-          body: JSON.stringify({ ownerNodeId, title: task.title, details: task.details, priority: task.priority, dueDate: task.dueDate }),
-        });
-        if (task.status === "complete") {
-          await request(`/tasks/${created.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ status: "complete" }),
-          });
-        }
+        const created = await request<Task>("/tasks", { method: "POST", body: JSON.stringify({ ownerNodeId, title: task.title, details: task.details, priority: task.priority, dueDate: task.dueDate }) });
+        if (task.status === "complete") await request(`/tasks/${created.id}`, { method: "PATCH", body: JSON.stringify({ status: "complete" }) });
       }
-
       for (const note of payload.notes) {
         const ownerNodeId = idMap.get(note.ownerNodeId);
         if (!ownerNodeId) continue;
-        await request("/notes", {
-          method: "POST",
-          body: JSON.stringify({ ownerNodeId, title: note.title, date: note.date, content: note.content, tags: note.tags || "" }),
-        });
+        await request("/notes", { method: "POST", body: JSON.stringify({ ownerNodeId, title: note.title, date: note.date, content: note.content, tags: note.tags || "" }) });
       }
-
-      await refresh();
-      setSelectedNodeId((current) => current || Array.from(idMap.values())[0] || "");
-      setRevision((current) => current + 1);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   const resetWorkspace = async () => {
-    setLoading(true);
-    try {
-      setError("");
+    await mutate(async () => {
       const [allTasks, allNotes, nodes] = await Promise.all([request<Task[]>("/tasks"), request<MeetingNote[]>("/notes"), request<TeamNode[]>("/team/tree")]);
       for (const task of allTasks) await request(`/tasks/${task.id}`, { method: "DELETE" });
       for (const note of allNotes) await request(`/notes/${note.id}`, { method: "DELETE" });
       for (const node of sortNodesForDelete(nodes)) await request(`/team/nodes/${node.id}`, { method: "DELETE" });
-      setTeamNodes([]);
-      setSelectedNodeId("");
-      setTasks([]);
-      setNotes([]);
-      setTeamView(null);
-      setRevision((current) => current + 1);
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   return {
     user,
     teamNodes,
-    selectedNodeId,
-    setSelectedNodeId,
-    tasks,
-    notes,
+    workView,
     teamView,
     error,
     loading,
     revision,
     login,
     logout,
-    refresh,
-    loadWork,
+    loadWorkspace,
+    createTask: (payload: { title: string; details: string; priority: TaskPriority; dueDate?: string }) => mutate(() => request("/me/tasks", { method: "POST", body: JSON.stringify(payload) })),
+    updateTask: (id: string, payload: { title?: string; details?: string; status?: TaskStatus; priority?: TaskPriority; dueDate?: string | null }) => mutate(() => request(`/me/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
+    deleteTask: (id: string) => mutate(() => request(`/me/tasks/${id}`, { method: "DELETE" })),
+    createNote: async (payload: { title: string; date: string; content: string; tags: string }) => {
+      let created: MeetingNote | null = null;
+      await mutate(async () => { created = await request<MeetingNote>("/me/notes", { method: "POST", body: JSON.stringify(payload) }); });
+      return created!;
+    },
+    updateNote: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) => mutate(() => request(`/me/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
+    deleteNote: (id: string) => mutate(() => request(`/me/notes/${id}`, { method: "DELETE" })),
+    createTeamNode: (payload: { name: string; title?: string; parentId?: string }) => mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
+    updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
+    deleteTeamNode: (id: string) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),
     exportWorkspace,
     importWorkspace,
     resetWorkspace,
-    createTeamNode: (payload: { name: string; title?: string; parentId?: string }) =>
-      mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
-    updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) =>
-      mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
-    deleteTeamNode: (id: string) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),
-    createTask: (payload: { ownerNodeId: string; title: string; details: string; priority: TaskPriority; dueDate?: string }) =>
-      mutate(() => request("/tasks", { method: "POST", body: JSON.stringify(payload) })),
-    updateTask: (id: string, payload: { title?: string; details?: string; status?: TaskStatus; priority?: TaskPriority; dueDate?: string | null }) =>
-      mutate(() => request(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
-    deleteTask: (id: string) => mutate(() => request(`/tasks/${id}`, { method: "DELETE" })),
-    createNote: async (payload: { ownerNodeId: string; title: string; date: string; content: string; tags: string }) => {
-      let created: MeetingNote | null = null;
-      await mutate(async () => {
-        created = await request<MeetingNote>("/notes", { method: "POST", body: JSON.stringify(payload) });
-      });
-      return created!;
-    },
-    updateNote: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) =>
-      mutate(() => request(`/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
-    deleteNote: (id: string) => mutate(() => request(`/notes/${id}`, { method: "DELETE" })),
   };
 }
 
 function resolveRouteFromHash(): Route {
   const hash = window.location.hash.replace(/^#\/?/, "") as Route;
-  return nav.some((item) => item.key === hash) ? hash : "team";
+  return nav.some((item) => item.key === hash) ? hash : "dashboard";
 }
 
-function createBlankNote(ownerNodeId: string): MeetingNote {
-  return { id: "", ownerNodeId, title: "", date: today(), tags: "", updatedAt: today(), content: "## Meeting notes\n\n- " };
+function createBlankNote(): MeetingNote {
+  return { id: "", ownerNodeId: "", title: "", date: today(), tags: "", updatedAt: today(), content: "## Meeting notes\n\n- " };
 }
 
 function buildStats(tasks: Task[], notes: MeetingNote[]) {
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
   const noteWords = notes.reduce((total, note) => total + wordCount(note.content), 0);
-  return {
-    tasks: tasks.length,
-    completedTasks,
-    notes: notes.length,
-    noteWords,
-    completionRate: tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0,
-  };
+  return { tasks: tasks.length, completedTasks, notes: notes.length, noteWords, completionRate: tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0 };
 }
 
 function buildTreeRows(nodes: TeamNode[]) {
   const byParent = new Map<string, TeamNode[]>();
-  for (const node of nodes) {
-    byParent.set(node.parentId ?? "root", [...(byParent.get(node.parentId ?? "root") ?? []), node]);
-  }
-  for (const siblings of byParent.values()) {
-    siblings.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
-  }
-
+  for (const node of nodes) byParent.set(node.parentId ?? "root", [...(byParent.get(node.parentId ?? "root") ?? []), node]);
+  for (const siblings of byParent.values()) siblings.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
   const rows: Array<{ node: TeamNode; depth: number }> = [];
   const visit = (parentId: string, depth: number) => {
     for (const node of byParent.get(parentId) ?? []) {
@@ -1275,11 +1005,7 @@ function buildTreeRows(nodes: TeamNode[]) {
 
 function sortNodesForImport(nodes: TeamNode[]) {
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const depthOf = (node: TeamNode): number => {
-    if (!node.parentId) return 0;
-    const parent = byId.get(node.parentId);
-    return parent ? depthOf(parent) + 1 : 0;
-  };
+  const depthOf = (node: TeamNode): number => node.parentId && byId.get(node.parentId) ? depthOf(byId.get(node.parentId)!) + 1 : 0;
   return [...nodes].sort((a, b) => depthOf(a) - depthOf(b) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 }
 
@@ -1329,31 +1055,19 @@ function wordCount(value: string) {
 }
 
 function firstLines(content: string) {
-  return content
-    .split("\n")
-    .map((line) => line.replace(/^#+\s*/, "").replace(/^[-*]\s*/, "").trim())
-    .filter(Boolean)
-    .slice(0, 3)
-    .join(" · ");
+  return content.split("\n").map((line) => line.replace(/^#+\s*/, "").replace(/^[-*]\s*/, "").trim()).filter(Boolean).slice(0, 3).join(" · ");
 }
 
 function renderMarkdown(markdown: string) {
-  const escaped = markdown
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  return escaped
-    .split("\n")
-    .map((line) => {
-      if (line.startsWith("### ")) return `<h3>${renderInlineMarkdown(line.slice(4))}</h3>`;
-      if (line.startsWith("## ")) return `<h2>${renderInlineMarkdown(line.slice(3))}</h2>`;
-      if (line.startsWith("# ")) return `<h1>${renderInlineMarkdown(line.slice(2))}</h1>`;
-      if (line.startsWith("- ")) return `<li>${renderInlineMarkdown(line.slice(2))}</li>`;
-      if (!line.trim()) return "";
-      return `<p>${renderInlineMarkdown(line)}</p>`;
-    })
-    .join("");
+  const escaped = markdown.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return escaped.split("\n").map((line) => {
+    if (line.startsWith("### ")) return `<h3>${renderInlineMarkdown(line.slice(4))}</h3>`;
+    if (line.startsWith("## ")) return `<h2>${renderInlineMarkdown(line.slice(3))}</h2>`;
+    if (line.startsWith("# ")) return `<h1>${renderInlineMarkdown(line.slice(2))}</h1>`;
+    if (line.startsWith("- ")) return `<li>${renderInlineMarkdown(line.slice(2))}</li>`;
+    if (!line.trim()) return "";
+    return `<p>${renderInlineMarkdown(line)}</p>`;
+  }).join("");
 }
 
 function renderInlineMarkdown(value: string) {
@@ -1379,40 +1093,29 @@ function exportSummaryMarkdown(tasks: Task[], notes: MeetingNote[], period: Peri
     ...(notes.length ? notes.map((note) => `- ${note.title}${note.tags ? ` [${note.tags}]` : ""}: ${firstLines(note.content)}`) : ["- No meeting notes"]),
     "",
   ];
-  const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `mira-summary-${period}-${today()}.md`;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(lines.join("\n"), `mira-summary-${period}-${today()}.md`, "text/markdown");
 }
 
 function parseWorkspaceExport(text: string): WorkspaceExport {
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    const parsed = JSON.parse(text);
+    if (!parsed || !Array.isArray(parsed.teamNodes) || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.notes)) throw new Error();
+    return parsed as WorkspaceExport;
   } catch {
-    throw new Error("The selected JSON file could not be parsed.");
-  }
-
-  if (!isRecord(parsed) || !Array.isArray(parsed.teamNodes) || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.notes)) {
     throw new Error("This JSON file is not a Mira workspace export.");
   }
-
-  return parsed as WorkspaceExport;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 function downloadJson(payload: WorkspaceExport) {
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  downloadBlob(JSON.stringify(payload, null, 2), `mira-workspace-${today()}.json`, "application/json");
+}
+
+function downloadBlob(value: string, filename: string, type: string) {
+  const blob = new Blob([value], { type });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `mira-workspace-${today()}.json`;
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -1421,8 +1124,9 @@ function confirmAction(message: string, action: () => void | Promise<void>) {
   if (window.confirm(message)) void action();
 }
 
-function useKeyboardShortcuts({ onSave, onNew }: { onSave: () => void | Promise<void>; onNew: () => void }) {
+function useKeyboardShortcuts({ onSave, onNew, enabled = true }: { onSave: () => void | Promise<void>; onNew: () => void; enabled?: boolean }) {
   useEffect(() => {
+    if (!enabled) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;
       const key = event.key.toLowerCase();
@@ -1437,7 +1141,7 @@ function useKeyboardShortcuts({ onSave, onNew }: { onSave: () => void | Promise<
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onSave, onNew]);
+  }, [onSave, onNew, enabled]);
 }
 
 function errorMessage(err: unknown) {

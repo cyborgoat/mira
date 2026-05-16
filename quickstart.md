@@ -1,6 +1,6 @@
 # Mira Quickstart
 
-This guide runs the current Mira app and the NestJS backend API. The frontend uses the API for login, team tree management, tasks, notes, summaries, and achievements.
+This guide runs the current Mira app and the NestJS backend API. The frontend uses the API for login, personal work, subordinate team view, superuser settings, tasks, notes, and stats.
 
 ## Prerequisites
 
@@ -24,14 +24,16 @@ From the repository root:
 npm run db:api
 ```
 
-The default seeded API login is:
+Seeded mock users all use `local-password`:
 
 ```text
-admin@mira.local
-local-password
+manager@mira.local  # has subordinate team view
+alex@mira.local     # personal mode only
+sam@mira.local      # personal mode only
+admin@mira.local    # superuser settings access
 ```
 
-Override it with `MIRA_SUPERUSER_EMAIL` and `MIRA_SUPERUSER_PASSWORD`.
+Override the superuser account with `MIRA_SUPERUSER_EMAIL` and `MIRA_SUPERUSER_PASSWORD`.
 
 ## 3. Start the API
 
@@ -62,12 +64,14 @@ If that port is already in use, Vite will print the next available port.
 ## 5. Open Tabs Directly
 
 ```text
-http://localhost:5173/#team
+http://localhost:5173/#dashboard
 http://localhost:5173/#tasks
 http://localhost:5173/#notes
-http://localhost:5173/#summary
-http://localhost:5173/#achievements
+http://localhost:5173/#stats
+http://localhost:5173/#settings
 ```
+
+Roles and titles are arbitrary text on users/team nodes. Team visibility comes from the tree: a user with children can switch to read-only team view, and superuser Settings access comes from the separate `isSuperuser` permission.
 
 ## Runtime Data
 

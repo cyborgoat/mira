@@ -1,20 +1,21 @@
 # Mira TODO
 
-The active product direction is an API-backed team workspace with NestJS for team mode and work records.
+The active product direction is an API-backed user-centered workspace with NestJS for personal work records, subordinate team view, and superuser-only settings.
 
 ## Current Scope
 
-- Team tree: seeded superuser can create, edit, select, and delete team nodes.
-- Tasks: API-backed create, edit, complete, delete, ownership, team scope, and search.
-- Meeting notes: API-backed Markdown editor, preview, upload, save, edit, ownership, and delete.
-- Weekly summary: daily, weekly, and monthly API rollups for completed/open tasks and meeting notes.
-- Achievements: historical task and meeting-note statistics with daily, weekly, and monthly filters.
+- Dashboard: focused work content and stats without tree administration.
+- Personal mode: signed-in users only see and mutate their own tasks and notes.
+- Team view mode: users with children in the tree can inspect subordinate task stats and details in read-only mode.
+- Settings: superusers can create, edit, select, delete, export, import, and reset team/workspace data.
+- Roles: arbitrary role/title text; authority comes from the tree and the separate superuser permission.
 
 ## P0 - New Features to be implemented
 
-- Team Management Tree: Implemented in the NestJS API for seeded superusers through `/team/nodes` and `/team/tree`.
-- Team View Mode: Implemented in the NestJS API through `/team/view`, aggregating tasks, meeting notes, and summary statistics for an individual node or managed subtree.
-- Frontend API Integration: Implemented for login, team tree, tasks, notes, summaries, and achievements.
+- Personal Work Mode: Implemented through `/me/work` and `/me/tasks`/`/me/notes`.
+- Team View Mode: Implemented through `/me/team-view`, aggregating subordinate tasks, meeting notes, and summary statistics.
+- Team Management Tree: Implemented as superuser-only Settings through `/team/nodes` and `/team/tree`.
+- Frontend API Integration: Implemented for login, dashboard, tasks, notes, stats, team view, and settings.
 
 ## P1 - Stabilize Local App
 
@@ -38,13 +39,12 @@ The active product direction is an API-backed team workspace with NestJS for tea
 
 - Add frontend component tests for tasks, notes, summary filters, and achievements.
 - Add accessibility checks for keyboard navigation and form labels.
-- Add Playwright smoke tests for the five active tabs.
+- Add Playwright smoke tests for dashboard, tasks, notes, stats, and settings.
 
 ## Replaced Legacy Work
 
 The old FastAPI backend has been replaced by the NestJS service in `apps/api`. These areas still need product decisions before they are rebuilt on the new backend:
 
-- Authentication and session handling.
 - Backend API state management.
 - Workspace isolation.
 - AI report generation.
