@@ -3,6 +3,7 @@ import {
   CalendarDays,
   CheckCircle2,
   ClipboardList,
+  Download,
   Edit3,
   FileText,
   GitFork,
@@ -79,6 +80,13 @@ type TeamView = {
     notes: number;
     completionRate: number;
   };
+};
+
+type WorkspaceExport = {
+  exportedAt: string;
+  teamNodes: TeamNode[];
+  tasks: Task[];
+  notes: MeetingNote[];
 };
 
 const API_URL = import.meta.env.VITE_MIRA_API_URL ?? "http://127.0.0.1:8000";
@@ -189,6 +197,9 @@ function App() {
                 onCreate={api.createTeamNode}
                 onUpdate={api.updateTeamNode}
                 onDelete={api.deleteTeamNode}
+                onExport={api.exportWorkspace}
+                onImport={api.importWorkspace}
+                onReset={api.resetWorkspace}
               />
             )}
             {route === "tasks" && (
@@ -269,6 +280,9 @@ function TeamViewPanel({
   onCreate,
   onUpdate,
   onDelete,
+  onExport,
+  onImport,
+  onReset,
 }: {
   nodes: TeamNode[];
   selectedNodeId: string;
@@ -277,6 +291,9 @@ function TeamViewPanel({
   onCreate: (payload: { name: string; title?: string; parentId?: string }) => Promise<void>;
   onUpdate: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onExport: () => Promise<void>;
+  onImport: (file: File | undefined) => Promise<void>;
+  onReset: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState({ name: "", title: "", parentId: selectedNodeId || "root" });
   const [editingId, setEditingId] = useState("");
@@ -396,7 +413,7 @@ function TeamViewPanel({
               <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(teamView.selectedNode!)}>
                 <Edit3 size={14} /> Edit
               </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => onDelete(teamView.selectedNode!.id)}>
+              <Button type="button" variant="ghost" size="sm" onClick={() => confirmAction("Delete this team node?", () => onDelete(teamView.selectedNode!.id))}>
                 <Trash2 size={14} /> Delete
               </Button>
             </div>
@@ -404,6 +421,27 @@ function TeamViewPanel({
         ) : (
           <EmptyState title="No node selected" text="Select a team node or create one." />
         )}
+      </Card>
+
+      <Card className="stack workspace-tools">
+        <div className="row-between">
+          <h2>Workspace data</h2>
+          <Badge>JSON</Badge>
+        </div>
+        <p className="muted">Export, import, or reset the API-backed workspace.</p>
+        <div className="row tool-row">
+          <Button type="button" variant="secondary" onClick={onExport}>
+            <Download size={15} /> Export
+          </Button>
+          <label className="upload-button tool-upload">
+            <Upload size={15} />
+            Import
+            <Input type="file" accept="application/json,.json" onChange={(event) => onImport(event.target.files?.[0])} />
+          </label>
+          <Button type="button" variant="ghost" onClick={() => confirmAction("Reset the workspace? This deletes all tasks, notes, and team nodes.", onReset)}>
+            <Trash2 size={15} /> Reset
+          </Button>
+        </div>
       </Card>
     </div>
   );
@@ -450,7 +488,7 @@ function TasksView({
     setDraft((current) => ({ ...current, ownerNodeId: selectedNodeId }));
   }, [selectedNodeId]);
 
-  const saveTask = async () => {
+  const saveTask = useCallback(async () => {
     const title = draft.title.trim();
     if (!title) return;
     if (editingTask) {
@@ -460,12 +498,19 @@ function TasksView({
       await onCreate({ ownerNodeId: draft.ownerNodeId, title, details: draft.details.trim() });
     }
     setDraft({ title: "", details: "", ownerNodeId: selectedNodeId });
-  };
+  }, [draft, editingTask, onCreate, onUpdate, selectedNodeId]);
 
   const startEdit = (task: Task) => {
     setEditingId(task.id);
     setDraft({ title: task.title, details: task.details, ownerNodeId: task.ownerNodeId });
   };
+
+  const newTask = useCallback(() => {
+    setEditingId(null);
+    setDraft({ title: "", details: "", ownerNodeId: selectedNodeId });
+  }, [selectedNodeId]);
+
+  useKeyboardShortcuts({ onSave: saveTask, onNew: newTask });
 
   return (
     <div className="grid two-col work-grid">
@@ -486,10 +531,7 @@ function TasksView({
           <Button
             variant="secondary"
             type="button"
-            onClick={() => {
-              setEditingId(null);
-              setDraft({ title: "", details: "", ownerNodeId: selectedNodeId });
-            }}
+            onClick={newTask}
           >
             Clear
           </Button>
@@ -524,13 +566,13 @@ function TasksView({
                 <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(task)}>
                   <Edit3 size={14} /> Edit
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => onDelete(task.id)}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => confirmAction("Delete this task?", () => onDelete(task.id))}>
                   <Trash2 size={14} /> Delete
                 </Button>
               </div>
             </div>
           ))}
-          {!visibleTasks.length && <EmptyState title="No tasks found" text="Add a task or adjust the search." />}
+          {!visibleTasks.length && <EmptyState title="No tasks found" text="Add a task or adjust the search." actionLabel="New task" onAction={newTask} />}
         </div>
       </Card>
     </div>
@@ -555,6 +597,7 @@ function NotesView({
   const [activeId, setActiveId] = useState(notes[0]?.id ?? "");
   const activeNote = notes.find((note) => note.id === activeId) ?? notes[0];
   const [draft, setDraft] = useState(() => activeNote ?? createBlankNote(selectedNodeId));
+  const [uploadError, setUploadError] = useState("");
 
   useEffect(() => {
     if (activeNote) setDraft({ ...activeNote, date: toDateInput(activeNote.date) });
@@ -564,7 +607,7 @@ function NotesView({
     if (!activeNote) setDraft(createBlankNote(selectedNodeId));
   }, [selectedNodeId, activeNote]);
 
-  const saveNote = async () => {
+  const saveNote = useCallback(async () => {
     const title = draft.title.trim() || "Untitled meeting";
     if (activeNote) {
       await onUpdate(activeNote.id, { title, date: draft.date, content: draft.content });
@@ -572,13 +615,15 @@ function NotesView({
       const created = await onCreate({ ownerNodeId: draft.ownerNodeId, title, date: draft.date, content: draft.content });
       setActiveId(created.id);
     }
-  };
+  }, [activeNote, draft, onCreate, onUpdate]);
 
-  const newNote = () => {
+  const newNote = useCallback(() => {
     const note = createBlankNote(selectedNodeId);
     setDraft(note);
     setActiveId("");
-  };
+  }, [selectedNodeId]);
+
+  useKeyboardShortcuts({ onSave: saveNote, onNew: newNote });
 
   const deleteNote = async (noteId: string) => {
     await onDelete(noteId);
@@ -589,10 +634,19 @@ function NotesView({
 
   const uploadNote = async (file: File | undefined) => {
     if (!file) return;
-    const content = await file.text();
-    const title = file.name.replace(/\.(md|markdown|txt)$/i, "");
-    const created = await onCreate({ ownerNodeId: selectedNodeId, title, date: today(), content });
-    setActiveId(created.id);
+    setUploadError("");
+    if (!/\.(md|markdown|txt)$/i.test(file.name)) {
+      setUploadError("Only .md, .markdown, and .txt files are supported.");
+      return;
+    }
+    try {
+      const content = await file.text();
+      const title = file.name.replace(/\.(md|markdown|txt)$/i, "");
+      const created = await onCreate({ ownerNodeId: selectedNodeId, title, date: today(), content });
+      setActiveId(created.id);
+    } catch {
+      setUploadError("This file could not be read.");
+    }
   };
 
   return (
@@ -609,6 +663,7 @@ function NotesView({
           Upload markdown
           <Input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" onChange={(event) => uploadNote(event.target.files?.[0])} />
         </label>
+        {uploadError && <div className="form-error">{uploadError}</div>}
         <div className="item-list">
           {notes.map((note) => (
             <button className={`note-tab ${note.id === activeId ? "active" : ""}`} key={note.id} onClick={() => setActiveId(note.id)}>
@@ -616,7 +671,7 @@ function NotesView({
               <small>{nodeLabel(nodes, note.ownerNodeId)} · {formatDate(note.date)}</small>
             </button>
           ))}
-          {!notes.length && <EmptyState title="No notes yet" text="Create a note or upload a markdown file." />}
+          {!notes.length && <EmptyState title="No notes yet" text="Create a note or upload a markdown file." actionLabel="New note" onAction={newNote} />}
         </div>
       </Card>
 
@@ -632,7 +687,7 @@ function NotesView({
         </div>
         <Textarea className="markdown-source" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
         <div className="row-between">
-          <Button type="button" variant="secondary" disabled={!activeNote} onClick={() => activeNote && deleteNote(activeNote.id)}>
+          <Button type="button" variant="secondary" disabled={!activeNote} onClick={() => activeNote && confirmAction("Delete this note?", () => deleteNote(activeNote.id))}>
             <Trash2 size={15} /> Delete
           </Button>
           <Button type="button" onClick={saveNote}>
@@ -831,12 +886,17 @@ function SummaryList({ items }: { items: Array<{ id: string; date: string; title
   );
 }
 
-function EmptyState({ title, text }: { title: string; text: string }) {
+function EmptyState({ title, text, actionLabel, onAction }: { title: string; text: string; actionLabel?: string; onAction?: () => void }) {
   return (
     <div className="empty-state">
       <ListChecks size={18} />
       <strong>{title}</strong>
       <span>{text}</span>
+      {actionLabel && onAction && (
+        <Button type="button" size="sm" variant="secondary" onClick={onAction}>
+          <Plus size={14} /> {actionLabel}
+        </Button>
+      )}
     </div>
   );
 }
@@ -961,6 +1021,103 @@ function useMiraApi() {
     }
   };
 
+  const exportWorkspace = async () => {
+    setLoading(true);
+    try {
+      setError("");
+      const [allTasks, allNotes] = await Promise.all([request<Task[]>("/tasks"), request<MeetingNote[]>("/notes")]);
+      downloadJson({
+        exportedAt: new Date().toISOString(),
+        teamNodes,
+        tasks: allTasks,
+        notes: allNotes,
+      } satisfies WorkspaceExport);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const importWorkspace = async (file: File | undefined) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".json")) {
+      setError("Only .json workspace files are supported.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      setError("");
+      const payload = parseWorkspaceExport(await file.text());
+      const idMap = new Map<string, string>();
+      for (const node of sortNodesForImport(payload.teamNodes)) {
+        const created = await request<TeamNode>("/team/nodes", {
+          method: "POST",
+          body: JSON.stringify({
+            name: node.name,
+            title: node.title || undefined,
+            parentId: node.parentId ? idMap.get(node.parentId) : undefined,
+          }),
+        });
+        idMap.set(node.id, created.id);
+      }
+
+      for (const task of payload.tasks) {
+        const ownerNodeId = idMap.get(task.ownerNodeId);
+        if (!ownerNodeId) continue;
+        const created = await request<Task>("/tasks", {
+          method: "POST",
+          body: JSON.stringify({ ownerNodeId, title: task.title, details: task.details }),
+        });
+        if (task.status === "complete") {
+          await request(`/tasks/${created.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "complete" }),
+          });
+        }
+      }
+
+      for (const note of payload.notes) {
+        const ownerNodeId = idMap.get(note.ownerNodeId);
+        if (!ownerNodeId) continue;
+        await request("/notes", {
+          method: "POST",
+          body: JSON.stringify({ ownerNodeId, title: note.title, date: note.date, content: note.content }),
+        });
+      }
+
+      await refresh();
+      setSelectedNodeId((current) => current || Array.from(idMap.values())[0] || "");
+      setRevision((current) => current + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetWorkspace = async () => {
+    setLoading(true);
+    try {
+      setError("");
+      const [allTasks, allNotes, nodes] = await Promise.all([request<Task[]>("/tasks"), request<MeetingNote[]>("/notes"), request<TeamNode[]>("/team/tree")]);
+      for (const task of allTasks) await request(`/tasks/${task.id}`, { method: "DELETE" });
+      for (const note of allNotes) await request(`/notes/${note.id}`, { method: "DELETE" });
+      for (const node of sortNodesForDelete(nodes)) await request(`/team/nodes/${node.id}`, { method: "DELETE" });
+      setTeamNodes([]);
+      setSelectedNodeId("");
+      setTasks([]);
+      setNotes([]);
+      setTeamView(null);
+      setRevision((current) => current + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     user,
     teamNodes,
@@ -976,6 +1133,9 @@ function useMiraApi() {
     logout,
     refresh,
     loadWork,
+    exportWorkspace,
+    importWorkspace,
+    resetWorkspace,
     createTeamNode: (payload: { name: string; title?: string; parentId?: string }) =>
       mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
     updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) =>
@@ -1038,6 +1198,20 @@ function buildTreeRows(nodes: TeamNode[]) {
   };
   visit("root", 0);
   return rows;
+}
+
+function sortNodesForImport(nodes: TeamNode[]) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const depthOf = (node: TeamNode): number => {
+    if (!node.parentId) return 0;
+    const parent = byId.get(node.parentId);
+    return parent ? depthOf(parent) + 1 : 0;
+  };
+  return [...nodes].sort((a, b) => depthOf(a) - depthOf(b) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+}
+
+function sortNodesForDelete(nodes: TeamNode[]) {
+  return sortNodesForImport(nodes).reverse();
 }
 
 function nodePath(nodes: TeamNode[], node: TeamNode) {
@@ -1103,6 +1277,58 @@ function renderMarkdown(markdown: string) {
       return `<p>${line}</p>`;
     })
     .join("");
+}
+
+function parseWorkspaceExport(text: string): WorkspaceExport {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("The selected JSON file could not be parsed.");
+  }
+
+  if (!isRecord(parsed) || !Array.isArray(parsed.teamNodes) || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.notes)) {
+    throw new Error("This JSON file is not a Mira workspace export.");
+  }
+
+  return parsed as WorkspaceExport;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function downloadJson(payload: WorkspaceExport) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `mira-workspace-${today()}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function confirmAction(message: string, action: () => void | Promise<void>) {
+  if (window.confirm(message)) void action();
+}
+
+function useKeyboardShortcuts({ onSave, onNew }: { onSave: () => void | Promise<void>; onNew: () => void }) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === "s") {
+        event.preventDefault();
+        void onSave();
+      }
+      if (key === "n") {
+        event.preventDefault();
+        onNew();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onSave, onNew]);
 }
 
 function errorMessage(err: unknown) {

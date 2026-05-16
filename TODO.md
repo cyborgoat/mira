@@ -18,12 +18,12 @@ The active product direction is an API-backed team workspace with NestJS for tea
 
 ## P1 - Stabilize Local App
 
-- Add confirmation before deleting tasks or notes.
-- Add import error states for unsupported or unreadable files.
-- Add empty-state actions that create the first task or note.
-- Add keyboard shortcuts for save and new record.
-- Add local data export/import as JSON.
-- Add reset workspace control with confirmation.
+- Confirmation before deleting tasks, notes, team nodes, and before resetting the workspace.
+- Import error states for unsupported or unreadable note uploads and workspace JSON imports.
+- Empty-state actions for starting the first task or note.
+- Keyboard shortcuts for save and new record in task and note editors.
+- Workspace data export/import as JSON.
+- Reset workspace control with confirmation.
 
 ## P2 - Product Depth
 
