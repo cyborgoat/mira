@@ -150,3 +150,7 @@ __pycache__/
 
 # Mira local-first runtime workspace
 mira-workspace/
+apps/api/tmp/
+apps/api/prisma/tmp/
+*.sqlite
+*.sqlite3

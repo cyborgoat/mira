@@ -97,6 +97,11 @@ button {
   padding: 0 18px;
 }
 
+.topbar-controls {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .brand,
 .row,
 .row-between {
@@ -186,6 +191,10 @@ button {
   justify-content: space-between;
   gap: 14px;
   margin-bottom: 14px;
+}
+
+.page-error {
+  margin-bottom: 12px;
 }
 
 .eyebrow {
@@ -346,7 +355,66 @@ label strong {
 }
 
 .member-select {
-  width: 188px;
+  width: 230px;
+}
+
+.team-grid {
+  grid-template-columns: 280px minmax(260px, 0.7fr) minmax(0, 1.2fr);
+  align-items: start;
+}
+
+.team-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.team-node {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--mira-border);
+  border-radius: 8px;
+  background: var(--mira-surface);
+  color: var(--mira-text);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.team-node:hover,
+.team-node.active {
+  background: var(--mira-accent-soft);
+  border-color: oklch(0.79 0.035 245);
+}
+
+.team-node span {
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
+.team-node small {
+  color: var(--mira-muted);
+  font-size: 12px;
+}
+
+.node-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--mira-border);
+  border-radius: 8px;
+  background: var(--mira-surface-2);
+  padding: 12px;
+}
+
+.node-detail p {
+  margin: 2px 0 0;
+}
+
+.first-node {
+  max-width: 460px;
 }
 
 .todo {
@@ -741,7 +809,8 @@ label strong {
 
   .two-col,
   .three-col,
-  .notes-grid {
+  .notes-grid,
+  .team-grid {
     grid-template-columns: 1fr;
   }
 

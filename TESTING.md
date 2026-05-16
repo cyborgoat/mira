@@ -1,6 +1,6 @@
 # Mira Testing
 
-The current app is frontend-only. The primary verification path is the web build.
+The frontend is API-backed, and the NestJS backend has its own build and API tests.
 
 ## Frontend
 
@@ -23,16 +23,19 @@ This runs TypeScript project build and Vite production bundling through `apps/we
 Start the app:
 
 ```bash
+npm run dev:api
 npm run dev:web
 ```
 
 Check these flows:
 
+- sign in with the seeded superuser.
+- `#team`: create a root node, create a child node, select each node, and confirm subtree metrics update.
 - `#tasks`: add a task, edit it, complete it, search it, delete it.
 - `#notes`: create a note, edit Markdown, save it, upload a `.md` or `.txt` file, delete a note.
 - `#summary`: switch daily, weekly, and monthly filters and confirm records change as expected.
 - `#achievements`: switch daily, weekly, and monthly filters and confirm statistics update.
-- Refresh the page and confirm records persist from `localStorage`.
+- Refresh the page and confirm records persist from the API.
 
 ## Planned Tests
 
@@ -40,16 +43,28 @@ Check these flows:
 - Component tests for meeting-note editing and upload.
 - Summary period-filter tests.
 - Achievement statistics tests.
-- Playwright smoke tests for all four routes.
+- Playwright smoke tests for all five routes.
 - Accessibility checks for keyboard navigation and labels.
 
-## Legacy Backend Tests
+## Backend
 
-The FastAPI backend still exists under `apps/api`, but it is not used by the current frontend app. If you are working on backend code directly, install `uv` and run:
+Install dependencies:
 
 ```bash
-uv sync --project apps/api --extra dev
-uv run --project apps/api pytest
+npm --prefix apps/api install
 ```
 
-Backend test status does not block the current local-first frontend unless the API is brought back into the runtime path.
+Run the backend build and tests:
+
+```bash
+npm run build:api
+npm run test:api
+```
+
+Manual API smoke test:
+
+- `POST /auth/login` with the seeded superuser.
+- create a root node and child node through `POST /team/nodes`.
+- create a task and note for the child node.
+- confirm `GET /tasks?nodeId=<root>&scope=self` excludes child records.
+- confirm `GET /tasks?nodeId=<root>&scope=tree` and `GET /team/view?nodeId=<root>&period=weekly` include child records.

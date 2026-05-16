@@ -5,14 +5,17 @@ import {
   ClipboardList,
   Edit3,
   FileText,
+  GitFork,
   ListChecks,
+  LogOut,
   Plus,
   Save,
   Search,
   Trash2,
   Upload,
+  Users,
 } from "lucide-react";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,77 +27,78 @@ import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import "./styles.css";
 
-type Route = "tasks" | "notes" | "summary" | "achievements";
+type Route = "team" | "tasks" | "notes" | "summary" | "achievements";
 type TaskStatus = "open" | "complete";
 type Period = "daily" | "weekly" | "monthly";
+type Scope = "self" | "tree";
+
+type TeamNode = {
+  id: string;
+  parentId: string | null;
+  name: string;
+  title: string | null;
+  sortOrder: number;
+  active: boolean;
+};
 
 type Task = {
   id: string;
+  ownerNodeId: string;
   title: string;
   details: string;
   status: TaskStatus;
   createdAt: string;
-  completedAt?: string;
+  completedAt: string | null;
+  updatedAt: string;
 };
 
 type MeetingNote = {
   id: string;
+  ownerNodeId: string;
   title: string;
   date: string;
   content: string;
   updatedAt: string;
 };
 
-type AppState = {
-  tasks: Task[];
-  notes: MeetingNote[];
+type User = {
+  id: string;
+  email: string;
+  role: "superuser";
 };
 
-const STORAGE_KEY = "mira-local-workspace-v1";
+type TeamView = {
+  selectedNode: TeamNode | null;
+  descendantIds: string[];
+  tasks: Task[];
+  notes: MeetingNote[];
+  stats: {
+    totalTasks: number;
+    completedTasks: number;
+    openTasks: number;
+    notes: number;
+    completionRate: number;
+  };
+};
+
+const API_URL = import.meta.env.VITE_MIRA_API_URL ?? "http://127.0.0.1:8000";
+const TOKEN_KEY = "mira-api-token-v1";
 
 const nav: Array<{ key: Route; label: string; icon: React.ComponentType<{ size?: number }> }> = [
+  { key: "team", label: "Team", icon: GitFork },
   { key: "tasks", label: "Tasks", icon: ClipboardList },
   { key: "notes", label: "Meeting Notes", icon: FileText },
   { key: "summary", label: "Weekly Summary", icon: CalendarDays },
   { key: "achievements", label: "Achievements", icon: BadgeCheck },
 ];
 
-const seedState: AppState = {
-  tasks: [
-    {
-      id: "task-1",
-      title: "Draft product scope",
-      details: "Capture first-pass requirements and open questions.",
-      status: "complete",
-      createdAt: daysAgo(4),
-      completedAt: daysAgo(3),
-    },
-    {
-      id: "task-2",
-      title: "Review meeting notes",
-      details: "Turn decisions into action items before the next check-in.",
-      status: "open",
-      createdAt: daysAgo(1),
-    },
-  ],
-  notes: [
-    {
-      id: "note-1",
-      title: "Planning sync",
-      date: daysAgo(2),
-      updatedAt: daysAgo(2),
-      content: "## Decisions\n- Keep the first version local-first\n- Prioritize tasks, notes, summaries\n\n## Follow-ups\n- Validate weekly rollup format",
-    },
-  ],
-};
-
 function App() {
   const [route, setRoute] = useState<Route>(resolveRouteFromHash());
-  const [state, setState] = usePersistentState();
   const [period, setPeriod] = useState<Period>("weekly");
+  const [scope, setScope] = useState<Scope>("tree");
+  const api = useMiraApi();
+  const selectedNode = api.teamNodes.find((node) => node.id === api.selectedNodeId) ?? null;
   const currentNav = nav.find((item) => item.key === route) ?? nav[0];
-  const filtered = useMemo(() => filterByPeriod(state, period), [state, period]);
-  const stats = useMemo(() => buildStats(filtered), [filtered]);
 
   useEffect(() => {
     const handleHashChange = () => setRoute(resolveRouteFromHash());
@@ -102,10 +106,22 @@ function App() {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
+  useEffect(() => {
+    if (api.user) void api.refresh();
+  }, [api.user, api.refresh]);
+
+  useEffect(() => {
+    if (api.user) void api.loadWork(scope, period);
+  }, [api.user, api.selectedNodeId, scope, period, api.revision, api.loadWork]);
+
   const navigateTo = (nextRoute: Route) => {
     window.location.hash = nextRoute;
     setRoute(nextRoute);
   };
+
+  if (!api.user) {
+    return <LoginScreen onLogin={api.login} error={api.error} loading={api.loading} />;
+  }
 
   return (
     <div className="app-shell">
@@ -114,12 +130,17 @@ function App() {
           <span className="brand-mark">M</span>
           <div className="brand-stack">
             <span className="brand-name">Mira</span>
-            <span className="brand-slogan">Local workspace</span>
+            <span className="brand-slogan">Team workspace</span>
           </div>
         </div>
-        <div className="row">
-          <Badge>{state.tasks.length} tasks</Badge>
-          <Badge>{state.notes.length} notes</Badge>
+        <div className="row topbar-controls">
+          <NodeSelect nodes={api.teamNodes} value={api.selectedNodeId} onChange={api.setSelectedNodeId} />
+          <ScopeControl value={scope} onChange={setScope} />
+          <Badge>{api.tasks.length} tasks</Badge>
+          <Badge>{api.notes.length} notes</Badge>
+          <Button type="button" variant="ghost" size="sm" onClick={api.logout}>
+            <LogOut size={15} /> Sign out
+          </Button>
         </div>
       </header>
 
@@ -145,71 +166,305 @@ function App() {
       </aside>
 
       <main className="main">
+        {api.error && <div className="form-error page-error">{api.error}</div>}
         <div className="page-header">
           <div>
-            <div className="eyebrow">Mira workspace</div>
+            <div className="eyebrow">{selectedNode ? nodePath(api.teamNodes, selectedNode) : "Mira team"}</div>
             <h1>{currentNav.label}</h1>
-            <p className="muted">Tasks, meeting notes, and generated work summaries in one local view.</p>
+            <p className="muted">API-backed tasks, meeting notes, and team rollups for the selected team node.</p>
           </div>
           {(route === "summary" || route === "achievements") && <PeriodControl value={period} onChange={setPeriod} />}
         </div>
 
-        {route === "tasks" && <TasksView tasks={state.tasks} setState={setState} />}
-        {route === "notes" && <NotesView notes={state.notes} setState={setState} />}
-        {route === "summary" && <SummaryView filtered={filtered} stats={stats} period={period} />}
-        {route === "achievements" && <AchievementsView filtered={filtered} stats={stats} period={period} />}
+        {!api.teamNodes.length ? (
+          <FirstTeamNode onCreate={api.createTeamNode} loading={api.loading} />
+        ) : (
+          <>
+            {route === "team" && (
+              <TeamViewPanel
+                nodes={api.teamNodes}
+                selectedNodeId={api.selectedNodeId}
+                teamView={api.teamView}
+                onSelect={api.setSelectedNodeId}
+                onCreate={api.createTeamNode}
+                onUpdate={api.updateTeamNode}
+                onDelete={api.deleteTeamNode}
+              />
+            )}
+            {route === "tasks" && (
+              <TasksView
+                tasks={api.tasks}
+                nodes={api.teamNodes}
+                selectedNodeId={api.selectedNodeId}
+                onCreate={api.createTask}
+                onUpdate={api.updateTask}
+                onDelete={api.deleteTask}
+              />
+            )}
+            {route === "notes" && (
+              <NotesView
+                notes={api.notes}
+                nodes={api.teamNodes}
+                selectedNodeId={api.selectedNodeId}
+                onCreate={api.createNote}
+                onUpdate={api.updateNote}
+                onDelete={api.deleteNote}
+              />
+            )}
+            {route === "summary" && <SummaryView tasks={api.teamView?.tasks ?? api.tasks} notes={api.teamView?.notes ?? api.notes} period={period} />}
+            {route === "achievements" && (
+              <AchievementsView tasks={api.teamView?.tasks ?? api.tasks} notes={api.teamView?.notes ?? api.notes} period={period} />
+            )}
+          </>
+        )}
       </main>
     </div>
   );
 }
 
-function TasksView({ tasks, setState }: { tasks: Task[]; setState: React.Dispatch<React.SetStateAction<AppState>> }) {
-  const [draft, setDraft] = useState({ title: "", details: "" });
+function LoginScreen({ onLogin, error, loading }: { onLogin: (email: string, password: string) => Promise<void>; error: string; loading: boolean }) {
+  const [email, setEmail] = useState("admin@mira.local");
+  const [password, setPassword] = useState("local-password");
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await onLogin(email, password);
+  };
+
+  return (
+    <div className="login-shell">
+      <Card className="stack login-card">
+        <div className="login-brand">
+          <span className="brand-mark">M</span>
+          Mira API
+        </div>
+        <div>
+          <h1>Sign in</h1>
+          <p className="muted">Use the seeded superuser to manage the team workspace.</p>
+        </div>
+        {error && <div className="form-error">{error}</div>}
+        <form className="stack" onSubmit={submit}>
+          <label className="field">
+            <span>Email</span>
+            <Input value={email} onChange={(event) => setEmail(event.target.value)} />
+          </label>
+          <label className="field">
+            <span>Password</span>
+            <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          </label>
+          <Button type="submit" disabled={loading}>
+            {loading ? "Signing in" : "Sign in"}
+          </Button>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+function TeamViewPanel({
+  nodes,
+  selectedNodeId,
+  teamView,
+  onSelect,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  nodes: TeamNode[];
+  selectedNodeId: string;
+  teamView: TeamView | null;
+  onSelect: (id: string) => void;
+  onCreate: (payload: { name: string; title?: string; parentId?: string }) => Promise<void>;
+  onUpdate: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState({ name: "", title: "", parentId: selectedNodeId || "root" });
+  const [editingId, setEditingId] = useState("");
+  const editingNode = nodes.find((node) => node.id === editingId);
+
+  useEffect(() => {
+    setDraft((current) => ({ ...current, parentId: selectedNodeId || "root" }));
+  }, [selectedNodeId]);
+
+  const save = async () => {
+    const name = draft.name.trim();
+    if (!name) return;
+    const payload = {
+      name,
+      title: draft.title.trim() || undefined,
+      parentId: draft.parentId === "root" ? undefined : draft.parentId,
+    };
+    if (editingNode) {
+      await onUpdate(editingNode.id, { ...payload, parentId: payload.parentId ?? null });
+      setEditingId("");
+    } else {
+      await onCreate(payload);
+    }
+    setDraft({ name: "", title: "", parentId: selectedNodeId || "root" });
+  };
+
+  const startEdit = (node: TeamNode) => {
+    setEditingId(node.id);
+    setDraft({ name: node.name, title: node.title ?? "", parentId: node.parentId ?? "root" });
+  };
+
+  return (
+    <div className="grid team-grid">
+      <Card className="stack">
+        <div className="row-between">
+          <h2>Team tree</h2>
+          <Badge>{nodes.length} nodes</Badge>
+        </div>
+        <div className="team-tree">
+          {buildTreeRows(nodes).map(({ node, depth }) => (
+            <button
+              className={`team-node ${node.id === selectedNodeId ? "active" : ""}`}
+              key={node.id}
+              style={{ paddingLeft: 10 + depth * 18 }}
+              onClick={() => onSelect(node.id)}
+            >
+              <span>{node.name}</span>
+              <small>{node.title || "Team member"}</small>
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="stack">
+        <div className="row-between">
+          <h2>{editingNode ? "Edit node" : "Add node"}</h2>
+          {editingNode && <Badge>{editingNode.name}</Badge>}
+        </div>
+        <Input value={draft.name} placeholder="Name" onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+        <Input value={draft.title} placeholder="Role or title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+        <Select value={draft.parentId} onValueChange={(value) => setDraft({ ...draft, parentId: value })}>
+          <SelectTrigger>
+            <SelectValue placeholder="Parent node" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="root">Top level</SelectItem>
+            {nodes
+              .filter((node) => node.id !== editingId)
+              .map((node) => (
+                <SelectItem value={node.id} key={node.id}>
+                  {nodePath(nodes, node)}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        <div className="row-between">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              setEditingId("");
+              setDraft({ name: "", title: "", parentId: selectedNodeId || "root" });
+            }}
+          >
+            Clear
+          </Button>
+          <Button type="button" disabled={!draft.name.trim()} onClick={save}>
+            {editingNode ? <Save size={15} /> : <Plus size={15} />} {editingNode ? "Save" : "Add"}
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="stack">
+        <div className="row-between">
+          <h2>Selected node</h2>
+          <Badge>{teamView?.descendantIds.length ?? 0} in tree</Badge>
+        </div>
+        {teamView?.selectedNode ? (
+          <>
+            <div className="node-detail">
+              <Users size={18} />
+              <div>
+                <strong>{teamView.selectedNode.name}</strong>
+                <p className="muted">{teamView.selectedNode.title || "No title set"}</p>
+              </div>
+            </div>
+            <StatsGrid
+              stats={{
+                tasks: teamView.stats.totalTasks,
+                completedTasks: teamView.stats.completedTasks,
+                notes: teamView.stats.notes,
+                noteWords: teamView.notes.reduce((total, note) => total + wordCount(note.content), 0),
+                completionRate: teamView.stats.completionRate,
+              }}
+            />
+            <div className="item-actions">
+              <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(teamView.selectedNode!)}>
+                <Edit3 size={14} /> Edit
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => onDelete(teamView.selectedNode!.id)}>
+                <Trash2 size={14} /> Delete
+              </Button>
+            </div>
+          </>
+        ) : (
+          <EmptyState title="No node selected" text="Select a team node or create one." />
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function FirstTeamNode({ onCreate, loading }: { onCreate: (payload: { name: string; title?: string }) => Promise<void>; loading: boolean }) {
+  const [name, setName] = useState("Team");
+  const [title, setTitle] = useState("Management root");
+  return (
+    <Card className="stack first-node">
+      <h2>Create the first team node</h2>
+      <p className="muted">Tasks and notes need an owner node before team mode can start.</p>
+      <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Node name" />
+      <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Role or title" />
+      <Button type="button" disabled={!name.trim() || loading} onClick={() => onCreate({ name, title })}>
+        <Plus size={15} /> Create node
+      </Button>
+    </Card>
+  );
+}
+
+function TasksView({
+  tasks,
+  nodes,
+  selectedNodeId,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  tasks: Task[];
+  nodes: TeamNode[];
+  selectedNodeId: string;
+  onCreate: (payload: { ownerNodeId: string; title: string; details: string }) => Promise<void>;
+  onUpdate: (id: string, payload: { title?: string; details?: string; status?: TaskStatus }) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState({ title: "", details: "", ownerNodeId: selectedNodeId });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const editingTask = tasks.find((task) => task.id === editingId);
   const visibleTasks = tasks.filter((task) => `${task.title} ${task.details}`.toLowerCase().includes(query.toLowerCase()));
 
-  const saveTask = () => {
+  useEffect(() => {
+    setDraft((current) => ({ ...current, ownerNodeId: selectedNodeId }));
+  }, [selectedNodeId]);
+
+  const saveTask = async () => {
     const title = draft.title.trim();
     if (!title) return;
-    if (editingId) {
-      setState((current) => ({
-        ...current,
-        tasks: current.tasks.map((task) => (task.id === editingId ? { ...task, title, details: draft.details.trim() } : task)),
-      }));
+    if (editingTask) {
+      await onUpdate(editingTask.id, { title, details: draft.details.trim() });
       setEditingId(null);
     } else {
-      setState((current) => ({
-        ...current,
-        tasks: [{ id: createId("task"), title, details: draft.details.trim(), status: "open", createdAt: today() }, ...current.tasks],
-      }));
+      await onCreate({ ownerNodeId: draft.ownerNodeId, title, details: draft.details.trim() });
     }
-    setDraft({ title: "", details: "" });
+    setDraft({ title: "", details: "", ownerNodeId: selectedNodeId });
   };
 
   const startEdit = (task: Task) => {
     setEditingId(task.id);
-    setDraft({ title: task.title, details: task.details });
-  };
-
-  const toggleTask = (taskId: string, checked: boolean) => {
-    setState((current) => ({
-      ...current,
-      tasks: current.tasks.map((task) =>
-        task.id === taskId
-          ? { ...task, status: checked ? "complete" : "open", completedAt: checked ? today() : undefined }
-          : task,
-      ),
-    }));
-  };
-
-  const deleteTask = (taskId: string) => {
-    setState((current) => ({ ...current, tasks: current.tasks.filter((task) => task.id !== taskId) }));
-    if (editingId === taskId) {
-      setEditingId(null);
-      setDraft({ title: "", details: "" });
-    }
+    setDraft({ title: task.title, details: task.details, ownerNodeId: task.ownerNodeId });
   };
 
   return (
@@ -219,6 +474,7 @@ function TasksView({ tasks, setState }: { tasks: Task[]; setState: React.Dispatc
           <h2>{editingTask ? "Edit task" : "New task"}</h2>
           {editingTask && <Badge>{formatDate(editingTask.createdAt)}</Badge>}
         </div>
+        <OwnerSelect nodes={nodes} value={draft.ownerNodeId} onChange={(ownerNodeId) => setDraft({ ...draft, ownerNodeId })} disabled={!!editingTask} />
         <Input value={draft.title} placeholder="Task title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
         <Textarea
           className="compact"
@@ -227,10 +483,14 @@ function TasksView({ tasks, setState }: { tasks: Task[]; setState: React.Dispatc
           onChange={(event) => setDraft({ ...draft, details: event.target.value })}
         />
         <div className="row-between">
-          <Button variant="secondary" type="button" onClick={() => {
-            setEditingId(null);
-            setDraft({ title: "", details: "" });
-          }}>
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={() => {
+              setEditingId(null);
+              setDraft({ title: "", details: "", ownerNodeId: selectedNodeId });
+            }}
+          >
             Clear
           </Button>
           <Button type="button" disabled={!draft.title.trim()} onClick={saveTask}>
@@ -253,10 +513,10 @@ function TasksView({ tasks, setState }: { tasks: Task[]; setState: React.Dispatc
             <div className={`todo task-row ${task.status === "complete" ? "done" : ""}`} key={task.id}>
               <div className="row-between">
                 <label className="row task-check">
-                  <Checkbox checked={task.status === "complete"} onCheckedChange={(checked) => toggleTask(task.id, checked === true)} />
+                  <Checkbox checked={task.status === "complete"} onCheckedChange={(checked) => onUpdate(task.id, { status: checked ? "complete" : "open" })} />
                   <span className="todo-title">{task.title}</span>
                 </label>
-                <Badge>{task.status}</Badge>
+                <Badge>{nodeLabel(nodes, task.ownerNodeId)}</Badge>
               </div>
               {task.details && <p className="muted item-body">{task.details}</p>}
               <div className="item-actions">
@@ -264,7 +524,7 @@ function TasksView({ tasks, setState }: { tasks: Task[]; setState: React.Dispatc
                 <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(task)}>
                   <Edit3 size={14} /> Edit
                 </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => deleteTask(task.id)}>
+                <Button type="button" variant="ghost" size="sm" onClick={() => onDelete(task.id)}>
                   <Trash2 size={14} /> Delete
                 </Button>
               </div>
@@ -277,51 +537,62 @@ function TasksView({ tasks, setState }: { tasks: Task[]; setState: React.Dispatc
   );
 }
 
-function NotesView({ notes, setState }: { notes: MeetingNote[]; setState: React.Dispatch<React.SetStateAction<AppState>> }) {
+function NotesView({
+  notes,
+  nodes,
+  selectedNodeId,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  notes: MeetingNote[];
+  nodes: TeamNode[];
+  selectedNodeId: string;
+  onCreate: (payload: { ownerNodeId: string; title: string; date: string; content: string }) => Promise<MeetingNote>;
+  onUpdate: (id: string, payload: { title?: string; date?: string; content?: string }) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
   const [activeId, setActiveId] = useState(notes[0]?.id ?? "");
   const activeNote = notes.find((note) => note.id === activeId) ?? notes[0];
-  const [draft, setDraft] = useState(() => activeNote ?? createBlankNote());
+  const [draft, setDraft] = useState(() => activeNote ?? createBlankNote(selectedNodeId));
 
   useEffect(() => {
-    if (activeNote) setDraft(activeNote);
+    if (activeNote) setDraft({ ...activeNote, date: toDateInput(activeNote.date) });
   }, [activeNote?.id]);
 
-  const saveNote = () => {
+  useEffect(() => {
+    if (!activeNote) setDraft(createBlankNote(selectedNodeId));
+  }, [selectedNodeId, activeNote]);
+
+  const saveNote = async () => {
     const title = draft.title.trim() || "Untitled meeting";
-    const nextNote = { ...draft, title, content: draft.content, updatedAt: today() };
-    setState((current) => {
-      const exists = current.notes.some((note) => note.id === nextNote.id);
-      return {
-        ...current,
-        notes: exists
-          ? current.notes.map((note) => (note.id === nextNote.id ? nextNote : note))
-          : [nextNote, ...current.notes],
-      };
-    });
-    setActiveId(nextNote.id);
+    if (activeNote) {
+      await onUpdate(activeNote.id, { title, date: draft.date, content: draft.content });
+    } else {
+      const created = await onCreate({ ownerNodeId: draft.ownerNodeId, title, date: draft.date, content: draft.content });
+      setActiveId(created.id);
+    }
   };
 
   const newNote = () => {
-    const note = createBlankNote();
+    const note = createBlankNote(selectedNodeId);
     setDraft(note);
-    setActiveId(note.id);
+    setActiveId("");
   };
 
-  const deleteNote = (noteId: string) => {
-    setState((current) => ({ ...current, notes: current.notes.filter((note) => note.id !== noteId) }));
+  const deleteNote = async (noteId: string) => {
+    await onDelete(noteId);
     const next = notes.find((note) => note.id !== noteId);
     setActiveId(next?.id ?? "");
-    setDraft(next ?? createBlankNote());
+    setDraft(next ? { ...next, date: toDateInput(next.date) } : createBlankNote(selectedNodeId));
   };
 
   const uploadNote = async (file: File | undefined) => {
     if (!file) return;
     const content = await file.text();
     const title = file.name.replace(/\.(md|markdown|txt)$/i, "");
-    const note = { id: createId("note"), title, date: today(), updatedAt: today(), content };
-    setDraft(note);
-    setActiveId(note.id);
-    setState((current) => ({ ...current, notes: [note, ...current.notes] }));
+    const created = await onCreate({ ownerNodeId: selectedNodeId, title, date: today(), content });
+    setActiveId(created.id);
   };
 
   return (
@@ -342,7 +613,7 @@ function NotesView({ notes, setState }: { notes: MeetingNote[]; setState: React.
           {notes.map((note) => (
             <button className={`note-tab ${note.id === activeId ? "active" : ""}`} key={note.id} onClick={() => setActiveId(note.id)}>
               <span>{note.title}</span>
-              <small>{formatDate(note.date)}</small>
+              <small>{nodeLabel(nodes, note.ownerNodeId)} · {formatDate(note.date)}</small>
             </button>
           ))}
           {!notes.length && <EmptyState title="No notes yet" text="Create a note or upload a markdown file." />}
@@ -354,6 +625,7 @@ function NotesView({ notes, setState }: { notes: MeetingNote[]; setState: React.
           <h2>Markdown editor</h2>
           <Badge>{formatDate(draft.date)}</Badge>
         </div>
+        <OwnerSelect nodes={nodes} value={draft.ownerNodeId} onChange={(ownerNodeId) => setDraft({ ...draft, ownerNodeId })} disabled={!!activeNote} />
         <div className="editor-fields">
           <Input value={draft.title} placeholder="Meeting title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
           <Input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
@@ -377,9 +649,10 @@ function NotesView({ notes, setState }: { notes: MeetingNote[]; setState: React.
   );
 }
 
-function SummaryView({ filtered, stats, period }: { filtered: AppState; stats: ReturnType<typeof buildStats>; period: Period }) {
-  const completedTasks = filtered.tasks.filter((task) => task.status === "complete");
-  const openTasks = filtered.tasks.filter((task) => task.status === "open");
+function SummaryView({ tasks, notes, period }: { tasks: Task[]; notes: MeetingNote[]; period: Period }) {
+  const stats = buildStats(tasks, notes);
+  const completedTasks = tasks.filter((task) => task.status === "complete");
+  const openTasks = tasks.filter((task) => task.status === "open");
 
   return (
     <div className="stack">
@@ -387,7 +660,7 @@ function SummaryView({ filtered, stats, period }: { filtered: AppState; stats: R
       <Card className="stack summary-panel">
         <div className="row-between">
           <h2>{periodLabel(period)} summary</h2>
-          <Badge>{filtered.tasks.length + filtered.notes.length} records</Badge>
+          <Badge>{tasks.length + notes.length} records</Badge>
         </div>
         <div className="summary-section">
           <h3>Completed tasks</h3>
@@ -399,14 +672,15 @@ function SummaryView({ filtered, stats, period }: { filtered: AppState; stats: R
         </div>
         <div className="summary-section">
           <h3>Meeting notes</h3>
-          <SummaryList items={filtered.notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: firstLines(note.content) }))} />
+          <SummaryList items={notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: firstLines(note.content) }))} />
         </div>
       </Card>
     </div>
   );
 }
 
-function AchievementsView({ filtered, stats, period }: { filtered: AppState; stats: ReturnType<typeof buildStats>; period: Period }) {
+function AchievementsView({ tasks, notes, period }: { tasks: Task[]; notes: MeetingNote[]; period: Period }) {
+  const stats = buildStats(tasks, notes);
   const achievements = [
     {
       id: "completed",
@@ -425,7 +699,7 @@ function AchievementsView({ filtered, stats, period }: { filtered: AppState; sta
     {
       id: "archive",
       title: "Historical record",
-      value: filtered.tasks.length + filtered.notes.length,
+      value: tasks.length + notes.length,
       target: 10,
       text: "Total historical task and note records.",
     },
@@ -456,8 +730,8 @@ function AchievementsView({ filtered, stats, period }: { filtered: AppState; sta
         <h2>{periodLabel(period)} history</h2>
         <SummaryList
           items={[
-            ...filtered.tasks.map((task) => ({ id: task.id, date: task.completedAt ?? task.createdAt, title: task.title, body: task.status })),
-            ...filtered.notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: "meeting note" })),
+            ...tasks.map((task) => ({ id: task.id, date: task.completedAt ?? task.createdAt, title: task.title, body: task.status })),
+            ...notes.map((note) => ({ id: note.id, date: note.date, title: note.title, body: "meeting note" })),
           ].sort((a, b) => b.date.localeCompare(a.date))}
         />
       </Card>
@@ -484,6 +758,49 @@ function StatsGrid({ stats }: { stats: ReturnType<typeof buildStats> }) {
         <p className="muted">Selected period</p>
       </Card>
     </div>
+  );
+}
+
+function NodeSelect({ nodes, value, onChange }: { nodes: TeamNode[]; value: string; onChange: (value: string) => void }) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="member-select">
+        <SelectValue placeholder="Select node" />
+      </SelectTrigger>
+      <SelectContent>
+        {nodes.map((node) => (
+          <SelectItem value={node.id} key={node.id}>
+            {nodePath(nodes, node)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function OwnerSelect({ nodes, value, onChange, disabled }: { nodes: TeamNode[]; value: string; onChange: (value: string) => void; disabled?: boolean }) {
+  return (
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger>
+        <SelectValue placeholder="Owner" />
+      </SelectTrigger>
+      <SelectContent>
+        {nodes.map((node) => (
+          <SelectItem value={node.id} key={node.id}>
+            {nodePath(nodes, node)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function ScopeControl({ value, onChange }: { value: Scope; onChange: (value: Scope) => void }) {
+  return (
+    <ToggleGroup type="single" value={value} onValueChange={(next) => next && onChange(next as Scope)} aria-label="Team scope">
+      <ToggleGroupItem value="self">Self</ToggleGroupItem>
+      <ToggleGroupItem value="tree">Tree</ToggleGroupItem>
+    </ToggleGroup>
   );
 }
 
@@ -524,71 +841,240 @@ function EmptyState({ title, text }: { title: string; text: string }) {
   );
 }
 
-function usePersistentState(): [AppState, React.Dispatch<React.SetStateAction<AppState>>] {
-  const [state, setState] = useState<AppState>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return seedState;
+function useMiraApi() {
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
+  const [user, setUser] = useState<User | null>(null);
+  const [teamNodes, setTeamNodes] = useState<TeamNode[]>([]);
+  const [selectedNodeId, setSelectedNodeId] = useState("");
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [notes, setNotes] = useState<MeetingNote[]>([]);
+  const [teamView, setTeamView] = useState<TeamView | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [revision, setRevision] = useState(0);
+
+  const request = useCallback(
+    async <T,>(path: string, options: RequestInit = {}) => {
+      const headers = new Headers(options.headers);
+      headers.set("Content-Type", "application/json");
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+      const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || body.detail || `Request failed: ${response.status}`);
+      }
+      return (await response.json()) as T;
+    },
+    [token],
+  );
+
+  const refresh = useCallback(async () => {
     try {
-      return JSON.parse(stored) as AppState;
-    } catch {
-      return seedState;
+      setError("");
+      const nodes = await request<TeamNode[]>("/team/tree");
+      setTeamNodes(nodes);
+      setSelectedNodeId((current) => current || nodes[0]?.id || "");
+    } catch (err) {
+      setError(errorMessage(err));
     }
-  });
+  }, [request]);
+
+  const loadWork = useCallback(
+    async (scope: Scope, period: Period) => {
+      if (!selectedNodeId) {
+        setTasks([]);
+        setNotes([]);
+        setTeamView(null);
+        return;
+      }
+      try {
+        setError("");
+        const query = `nodeId=${encodeURIComponent(selectedNodeId)}&scope=${scope}`;
+        const [taskData, noteData, viewData] = await Promise.all([
+          request<Task[]>(`/tasks?${query}`),
+          request<MeetingNote[]>(`/notes?${query}`),
+          request<TeamView>(`/team/view?nodeId=${encodeURIComponent(selectedNodeId)}&period=${period}`),
+        ]);
+        setTasks(taskData);
+        setNotes(noteData);
+        setTeamView(viewData);
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    },
+    [request, selectedNodeId],
+  );
+
+  const login = async (email: string, password: string) => {
+    setLoading(true);
+    try {
+      setError("");
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || "Unable to sign in");
+      }
+      const data = (await response.json()) as { accessToken: string; user: User };
+      localStorage.setItem(TOKEN_KEY, data.accessToken);
+      setToken(data.accessToken);
+      setUser(data.user);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken("");
+    setUser(null);
+    setTeamNodes([]);
+    setSelectedNodeId("");
+    setTasks([]);
+    setNotes([]);
+    setTeamView(null);
+  };
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  }, [state]);
+    if (!token) return;
+    void request<User>("/auth/me")
+      .then(setUser)
+      .catch(() => logout());
+  }, [token, request]);
 
-  return [state, setState];
+  const mutate = async (operation: () => Promise<unknown>) => {
+    setLoading(true);
+    try {
+      setError("");
+      await operation();
+      await refresh();
+      setRevision((current) => current + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return {
+    user,
+    teamNodes,
+    selectedNodeId,
+    setSelectedNodeId,
+    tasks,
+    notes,
+    teamView,
+    error,
+    loading,
+    revision,
+    login,
+    logout,
+    refresh,
+    loadWork,
+    createTeamNode: (payload: { name: string; title?: string; parentId?: string }) =>
+      mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
+    updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) =>
+      mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
+    deleteTeamNode: (id: string) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),
+    createTask: (payload: { ownerNodeId: string; title: string; details: string }) =>
+      mutate(() => request("/tasks", { method: "POST", body: JSON.stringify(payload) })),
+    updateTask: (id: string, payload: { title?: string; details?: string; status?: TaskStatus }) =>
+      mutate(() => request(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
+    deleteTask: (id: string) => mutate(() => request(`/tasks/${id}`, { method: "DELETE" })),
+    createNote: async (payload: { ownerNodeId: string; title: string; date: string; content: string }) => {
+      let created: MeetingNote | null = null;
+      await mutate(async () => {
+        created = await request<MeetingNote>("/notes", { method: "POST", body: JSON.stringify(payload) });
+      });
+      return created!;
+    },
+    updateNote: (id: string, payload: { title?: string; date?: string; content?: string }) =>
+      mutate(() => request(`/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
+    deleteNote: (id: string) => mutate(() => request(`/notes/${id}`, { method: "DELETE" })),
+  };
 }
 
 function resolveRouteFromHash(): Route {
   const hash = window.location.hash.replace(/^#\/?/, "") as Route;
-  return nav.some((item) => item.key === hash) ? hash : "tasks";
+  return nav.some((item) => item.key === hash) ? hash : "team";
 }
 
-function createBlankNote(): MeetingNote {
-  return { id: createId("note"), title: "", date: today(), updatedAt: today(), content: "## Meeting notes\n\n- " };
+function createBlankNote(ownerNodeId: string): MeetingNote {
+  return { id: "", ownerNodeId, title: "", date: today(), updatedAt: today(), content: "## Meeting notes\n\n- " };
 }
 
-function filterByPeriod(state: AppState, period: Period): AppState {
-  const inPeriod = (date: string) => isInPeriod(date, period);
+function buildStats(tasks: Task[], notes: MeetingNote[]) {
+  const completedTasks = tasks.filter((task) => task.status === "complete").length;
+  const noteWords = notes.reduce((total, note) => total + wordCount(note.content), 0);
   return {
-    tasks: state.tasks.filter((task) => inPeriod(task.completedAt ?? task.createdAt)),
-    notes: state.notes.filter((note) => inPeriod(note.date)),
-  };
-}
-
-function buildStats(state: AppState) {
-  const completedTasks = state.tasks.filter((task) => task.status === "complete").length;
-  const noteWords = state.notes.reduce((total, note) => total + note.content.trim().split(/\s+/).filter(Boolean).length, 0);
-  return {
-    tasks: state.tasks.length,
+    tasks: tasks.length,
     completedTasks,
-    notes: state.notes.length,
+    notes: notes.length,
     noteWords,
-    completionRate: state.tasks.length ? Math.round((completedTasks / state.tasks.length) * 100) : 0,
+    completionRate: tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0,
   };
 }
 
-function isInPeriod(dateValue: string, period: Period) {
-  const date = startOfDay(new Date(dateValue));
-  const now = startOfDay(new Date());
-  if (period === "daily") return date.getTime() === now.getTime();
-  if (period === "weekly") {
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - now.getDay());
-    return date >= weekStart;
+function buildTreeRows(nodes: TeamNode[]) {
+  const byParent = new Map<string, TeamNode[]>();
+  for (const node of nodes) {
+    byParent.set(node.parentId ?? "root", [...(byParent.get(node.parentId ?? "root") ?? []), node]);
   }
-  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth();
+  for (const siblings of byParent.values()) {
+    siblings.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+  }
+
+  const rows: Array<{ node: TeamNode; depth: number }> = [];
+  const visit = (parentId: string, depth: number) => {
+    for (const node of byParent.get(parentId) ?? []) {
+      rows.push({ node, depth });
+      visit(node.id, depth + 1);
+    }
+  };
+  visit("root", 0);
+  return rows;
 }
 
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+function nodePath(nodes: TeamNode[], node: TeamNode) {
+  const byId = new Map(nodes.map((item) => [item.id, item]));
+  const parts = [node.name];
+  let parentId = node.parentId;
+  while (parentId) {
+    const parent = byId.get(parentId);
+    if (!parent) break;
+    parts.unshift(parent.name);
+    parentId = parent.parentId;
+  }
+  return parts.join(" / ");
+}
+
+function nodeLabel(nodes: TeamNode[], id: string) {
+  return nodes.find((node) => node.id === id)?.name ?? "Unknown";
+}
+
+function formatDate(dateValue: string) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date(dateValue));
+}
+
+function toDateInput(dateValue: string) {
+  return new Date(dateValue).toISOString().slice(0, 10);
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function periodLabel(period: Period) {
   return period.charAt(0).toUpperCase() + period.slice(1);
+}
+
+function wordCount(value: string) {
+  return value.trim().split(/\s+/).filter(Boolean).length;
 }
 
 function firstLines(content: string) {
@@ -619,26 +1105,8 @@ function renderMarkdown(markdown: string) {
     .join("");
 }
 
-function formatDate(dateValue: string) {
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(dateValue));
+function errorMessage(err: unknown) {
+  return err instanceof Error ? err.message : "Something went wrong";
 }
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function daysAgo(days: number) {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString().slice(0, 10);
-}
-
-function createId(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+createRoot(document.getElementById("root")!).render(<App />);

@@ -5,7 +5,10 @@
   "scripts": {
     "dev:web": "npm --prefix apps/web run dev",
     "build:web": "npm --prefix apps/web run build",
-    "dev:api": "uv run --project apps/api uvicorn mira_api.main:app --app-dir apps/api --reload --port 8000",
-    "start:api": "uv run --project apps/api uvicorn mira_api.main:app --app-dir apps/api --port 8000"
+    "dev:api": "npm --prefix apps/api run dev",
+    "start:api": "npm --prefix apps/api run start",
+    "build:api": "npm --prefix apps/api run build",
+    "test:api": "npm --prefix apps/api run test",
+    "db:api": "npm --prefix apps/api run prisma:push"
   }
 }

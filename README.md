@@ -1,15 +1,16 @@
 # Mira
 
-Mira is now a local-first workspace for tracking tasks, writing meeting notes, and reviewing work history without auth or backend setup.
+Mira is an API-backed team workspace for tracking tasks, writing meeting notes, and reviewing work history by individual or managed subtree.
 
-The current app starts from a clean frontend surface and focuses on four tabs:
+The current app starts with a seeded superuser login and focuses on five tabs:
 
+- **Team**: create and manage the team tree.
 - **Tasks**: create, edit, complete, delete, and search task records.
 - **Meeting Notes**: write Markdown notes, preview them, upload `.md`, `.markdown`, or `.txt` files, save edits, and delete notes.
 - **Weekly Summary**: summarize tasks and meeting notes by daily, weekly, or monthly periods.
 - **Achievements**: keep historical task and meeting-note activity with period filters and simple statistics.
 
-Data is persisted in browser `localStorage` under `mira-local-workspace-v1`.
+Work records are persisted by the NestJS API. Browser `localStorage` stores only the API access token.
 
 ## Quickstart
 
@@ -17,11 +18,19 @@ Install dependencies:
 
 ```bash
 npm --prefix apps/web install
+npm --prefix apps/api install
 ```
 
-Start the app:
+Prepare the API database:
 
 ```bash
+npm run db:api
+```
+
+Start the API and web app:
+
+```bash
+npm run dev:api
 npm run dev:web
 ```
 
@@ -34,6 +43,7 @@ http://localhost:5173/
 Hash routes are available for each tab:
 
 ```text
+http://localhost:5173/#team
 http://localhost:5173/#tasks
 http://localhost:5173/#notes
 http://localhost:5173/#summary
@@ -44,13 +54,14 @@ http://localhost:5173/#achievements
 
 ```bash
 npm run build:web
+npm run build:api
 ```
 
-This runs the frontend TypeScript build and Vite production build.
+This runs the frontend TypeScript/Vite build and the NestJS API build.
 
 ## Current Architecture
 
-The active app is implemented in:
+The active frontend is implemented in:
 
 ```text
 apps/web/src/main.tsx
@@ -58,14 +69,14 @@ apps/web/src/styles.css
 apps/web/src/components/ui/
 ```
 
-The app intentionally does not use:
+The backend API is implemented in:
 
-- Authentication
-- Backend API calls
-- React Query data fetching
-- i18n runtime resources
+```text
+apps/api/src/
+apps/api/prisma/schema.prisma
+```
 
-Installed packages and reusable UI components are kept in place so future backend, auth, or sync work can be reintroduced without rebuilding the frontend stack.
+The current backend slice exposes seeded superuser auth, team tree CRUD, task and note persistence, and `/team/view` aggregation. The frontend calls these endpoints directly.
 
 ## Product Notes
 
@@ -76,4 +87,4 @@ Mira is designed as a compact work journal:
 3. Review summaries by day, week, or month.
 4. Track historical activity through achievement-style statistics.
 
-The current scope is deliberately local-first. Backend services under `apps/api` remain in the repository, but they are not required for the current frontend app.
+The current scope is the first API-backed team mode. Local-only storage has been replaced for active task and note workflows.
