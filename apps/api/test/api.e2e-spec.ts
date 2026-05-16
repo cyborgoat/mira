@@ -121,6 +121,21 @@ describe("Mira Nest API", () => {
     expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).toContain("Review team roadmap");
     expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).not.toContain("Polish dashboard layout");
 
+    await request(app.getHttpServer())
+      .post("/me/notes")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ title: "First new note", date: new Date().toISOString(), content: "First body", tags: "regression" })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post("/me/notes")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ title: "Second new note", date: new Date().toISOString(), content: "Second body", tags: "regression" })
+      .expect(201);
+    const managerNotes = await request(app.getHttpServer()).get("/me/work?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
+    const noteTitles = managerNotes.body.notes.map((note: { title: string }) => note.title);
+    expect(noteTitles).toContain("First new note");
+    expect(noteTitles).toContain("Second new note");
+
     const managerTeam = await request(app.getHttpServer()).get("/me/team-view?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
     const teamTitles = managerTeam.body.tasks.map((task: { title: string }) => task.title);
     expect(teamTitles).toContain("Polish dashboard layout");
