@@ -75,13 +75,13 @@ describe("Mira Nest API", () => {
     await request(app.getHttpServer())
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
-      .send({ ownerNodeId: child.id, title: "Ship API", details: "NestJS service" })
+      .send({ ownerNodeId: child.id, title: "Ship API", details: "NestJS service", priority: "high", dueDate: new Date().toISOString() })
       .expect(201);
 
     await request(app.getHttpServer())
       .post("/notes")
       .set("Authorization", `Bearer ${token}`)
-      .send({ ownerNodeId: child.id, title: "Planning", date: new Date().toISOString(), content: "Team mode" })
+      .send({ ownerNodeId: child.id, title: "Planning", date: new Date().toISOString(), content: "Team mode", tags: "planning,api" })
       .expect(201);
 
     const self = await request(app.getHttpServer()).get(`/tasks?nodeId=${root.id}&scope=self`).expect(200);
@@ -89,6 +89,8 @@ describe("Mira Nest API", () => {
 
     const tree = await request(app.getHttpServer()).get(`/tasks?nodeId=${root.id}&scope=tree`).expect(200);
     expect(tree.body).toHaveLength(1);
+    expect(tree.body[0].priority).toBe("high");
+    expect(tree.body[0].dueDate).toBeTruthy();
 
     const view = await request(app.getHttpServer()).get(`/team/view?nodeId=${root.id}&period=weekly`).expect(200);
     expect(view.body.stats.totalTasks).toBe(1);
@@ -135,6 +137,8 @@ async function createTestSchema(dbPath: string) {
       title TEXT NOT NULL,
       details TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'open',
+      priority TEXT NOT NULL DEFAULT 'normal',
+      dueDate DATETIME,
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       completedAt DATETIME,
       updatedAt DATETIME NOT NULL,
@@ -148,6 +152,7 @@ async function createTestSchema(dbPath: string) {
       title TEXT NOT NULL,
       date DATETIME NOT NULL,
       content TEXT NOT NULL DEFAULT '',
+      tags TEXT NOT NULL DEFAULT '',
       createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL,
       CONSTRAINT MeetingNote_ownerNodeId_fkey FOREIGN KEY (ownerNodeId) REFERENCES TeamNode (id) ON DELETE RESTRICT ON UPDATE CASCADE

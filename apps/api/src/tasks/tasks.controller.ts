@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
-import { TaskStatus } from "@prisma/client";
+import { TaskPriority, TaskStatus } from "@prisma/client";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CreateTaskDto, UpdateTaskDto } from "./dto/task.dto";
 import { TasksService } from "./tasks.service";
@@ -14,8 +14,9 @@ export class TasksController {
     @Query("scope") scope: "self" | "tree" = "self",
     @Query("query") query?: string,
     @Query("status") status?: TaskStatus,
+    @Query("priority") priority?: TaskPriority,
   ) {
-    return this.tasks.list({ nodeId, scope, query, status });
+    return this.tasks.list({ nodeId, scope, query, status, priority });
   }
 
   @UseGuards(JwtAuthGuard)

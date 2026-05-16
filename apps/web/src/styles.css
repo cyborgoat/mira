@@ -477,6 +477,17 @@ label strong {
   font-size: 12px;
 }
 
+.filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.badge-row {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .badge-card {
   border: 1px solid var(--mira-border);
   border-radius: 8px;
@@ -499,6 +510,23 @@ label strong {
 
 .badge-card.unlocked .achievement-icon {
   color: var(--mira-accent);
+}
+
+.achievement-detail {
+  color: var(--mira-muted);
+  font-size: 13px;
+}
+
+.achievement-detail summary {
+  color: var(--mira-text);
+  cursor: pointer;
+  font-weight: 620;
+}
+
+.achievement-detail ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  line-height: 1.55;
 }
 
 .metric-card {
@@ -731,6 +759,18 @@ label strong {
   line-height: 1.6;
 }
 
+.markdown-preview code {
+  border: 1px solid var(--mira-border);
+  border-radius: 5px;
+  background: var(--mira-surface);
+  padding: 1px 4px;
+}
+
+.markdown-preview a {
+  color: var(--mira-accent-strong);
+  font-weight: 620;
+}
+
 .summary-panel {
   gap: 14px;
 }
@@ -864,7 +904,8 @@ label strong {
 
   .summary-section,
   .summary-item,
-  .editor-fields {
+  .editor-fields,
+  .filter-row {
     grid-template-columns: 1fr;
   }
 

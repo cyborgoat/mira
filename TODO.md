@@ -27,11 +27,11 @@ The active product direction is an API-backed team workspace with NestJS for tea
 
 ## P2 - Product Depth
 
-- Add task due dates and priority filters.
-- Add meeting-note tags.
-- Add richer Markdown support without unsafe HTML rendering.
-- Add summary export to Markdown.
-- Add achievement detail views with the source records that contributed to each metric.
+- Task due dates and priority filters.
+- Meeting-note tags.
+- Richer Markdown support without unsafe HTML rendering.
+- Summary export to Markdown.
+- Achievement detail views with the source records that contributed to each metric.
 - Add responsive QA for desktop, tablet, and mobile.
 
 ## P3 - Quality

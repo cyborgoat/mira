@@ -5,10 +5,10 @@ Mira is an API-backed team workspace for tracking tasks, writing meeting notes, 
 The current app starts with a seeded superuser login and focuses on five tabs:
 
 - **Team**: create and manage the team tree.
-- **Tasks**: create, edit, complete, delete, and search task records.
-- **Meeting Notes**: write Markdown notes, preview them, upload `.md`, `.markdown`, or `.txt` files, save edits, and delete notes.
+- **Tasks**: create, edit, complete, delete, search, prioritize, and track due dates.
+- **Meeting Notes**: write Markdown notes, tag them, preview them, upload `.md`, `.markdown`, or `.txt` files, save edits, and delete notes.
 - **Weekly Summary**: summarize tasks and meeting notes by daily, weekly, or monthly periods.
-- **Achievements**: keep historical task and meeting-note activity with period filters and simple statistics.
+- **Achievements**: keep historical task and meeting-note activity with period filters, source details, and simple statistics.
 
 Work records are persisted by the NestJS API. Browser `localStorage` stores only the API access token.
 

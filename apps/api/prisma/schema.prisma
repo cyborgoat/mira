@@ -40,12 +40,16 @@ model Task {
   title       String
   details     String     @default("")
   status      TaskStatus @default(open)
+  priority    TaskPriority @default(normal)
+  dueDate     DateTime?
   createdAt   DateTime   @default(now())
   completedAt DateTime?
   updatedAt   DateTime   @updatedAt
   owner       TeamNode   @relation(fields: [ownerNodeId], references: [id])
 
   @@index([ownerNodeId, status])
+  @@index([priority])
+  @@index([dueDate])
   @@index([createdAt])
   @@index([completedAt])
 }
@@ -56,6 +60,7 @@ model MeetingNote {
   title       String
   date        DateTime
   content     String   @default("")
+  tags        String   @default("")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   owner       TeamNode @relation(fields: [ownerNodeId], references: [id])
@@ -70,4 +75,11 @@ enum UserRole {
 enum TaskStatus {
   open
   complete
+}
+
+enum TaskPriority {
+  low
+  normal
+  high
+  urgent
 }

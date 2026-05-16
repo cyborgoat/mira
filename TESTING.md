@@ -31,10 +31,10 @@ Check these flows:
 
 - sign in with the seeded superuser.
 - `#team`: create a root node, create a child node, select each node, and confirm subtree metrics update.
-- `#tasks`: add a task, edit it, complete it, search it, delete it.
-- `#notes`: create a note, edit Markdown, save it, upload a `.md` or `.txt` file, delete a note.
-- `#summary`: switch daily, weekly, and monthly filters and confirm records change as expected.
-- `#achievements`: switch daily, weekly, and monthly filters and confirm statistics update.
+- `#tasks`: add a task with priority and due date, filter it, edit it, complete it, search it, delete it.
+- `#notes`: create a tagged note, edit Markdown, save it, upload a `.md` or `.txt` file, delete a note.
+- `#summary`: switch daily, weekly, and monthly filters, export Markdown, and confirm records change as expected.
+- `#achievements`: switch daily, weekly, and monthly filters and confirm statistics and source details update.
 - Refresh the page and confirm records persist from the API.
 
 ## Planned Tests

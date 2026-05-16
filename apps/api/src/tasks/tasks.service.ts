@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, TaskStatus } from "@prisma/client";
+import { Prisma, TaskPriority, TaskStatus } from "@prisma/client";
 import { createId } from "../common/ids";
 import { PrismaService } from "../prisma/prisma.service";
 import { TeamService } from "../team/team.service";
@@ -12,10 +12,11 @@ export class TasksService {
     private readonly team: TeamService,
   ) {}
 
-  async list(query: { nodeId?: string; scope?: "self" | "tree"; query?: string; status?: TaskStatus }) {
+  async list(query: { nodeId?: string; scope?: "self" | "tree"; query?: string; status?: TaskStatus; priority?: TaskPriority }) {
     const where: Prisma.TaskWhereInput = {};
     if (query.nodeId) where.ownerNodeId = { in: await this.team.idsForScope(query.nodeId, query.scope || "self") };
     if (query.status) where.status = query.status;
+    if (query.priority) where.priority = query.priority;
     if (query.query) {
       where.OR = [
         { title: { contains: query.query } },
@@ -37,6 +38,8 @@ export class TasksService {
         ownerNodeId: payload.ownerNodeId,
         title: payload.title.trim(),
         details: payload.details?.trim() || "",
+        priority: payload.priority || "normal",
+        dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
       },
     });
   }
@@ -48,6 +51,8 @@ export class TasksService {
     const data: Prisma.TaskUpdateInput = {};
     if (payload.title !== undefined) data.title = payload.title.trim();
     if (payload.details !== undefined) data.details = payload.details.trim();
+    if (payload.priority !== undefined) data.priority = payload.priority;
+    if (payload.dueDate !== undefined) data.dueDate = payload.dueDate ? new Date(payload.dueDate) : null;
     if (payload.status !== undefined) {
       data.status = payload.status;
       data.completedAt = payload.status === "complete" ? (task.completedAt || new Date()) : null;

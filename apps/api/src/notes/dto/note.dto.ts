@@ -13,6 +13,10 @@ export class CreateNoteDto {
 
   @IsString()
   content!: string;
+
+  @IsOptional()
+  @IsString()
+  tags?: string;
 }
 
 export class UpdateNoteDto {
@@ -28,4 +32,8 @@ export class UpdateNoteDto {
   @IsOptional()
   @IsString()
   content?: string;
+
+  @IsOptional()
+  @IsString()
+  tags?: string;
 }

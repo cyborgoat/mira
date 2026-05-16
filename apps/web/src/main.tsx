@@ -30,6 +30,7 @@ import "./styles.css";
 
 type Route = "team" | "tasks" | "notes" | "summary" | "achievements";
 type TaskStatus = "open" | "complete";
+type TaskPriority = "low" | "normal" | "high" | "urgent";
 type Period = "daily" | "weekly" | "monthly";
 type Scope = "self" | "tree";
 
@@ -48,6 +49,8 @@ type Task = {
   title: string;
   details: string;
   status: TaskStatus;
+  priority: TaskPriority;
+  dueDate: string | null;
   createdAt: string;
   completedAt: string | null;
   updatedAt: string;
@@ -59,6 +62,7 @@ type MeetingNote = {
   title: string;
   date: string;
   content: string;
+  tags: string;
   updatedAt: string;
 };
 
@@ -474,15 +478,22 @@ function TasksView({
   tasks: Task[];
   nodes: TeamNode[];
   selectedNodeId: string;
-  onCreate: (payload: { ownerNodeId: string; title: string; details: string }) => Promise<void>;
-  onUpdate: (id: string, payload: { title?: string; details?: string; status?: TaskStatus }) => Promise<void>;
+  onCreate: (payload: { ownerNodeId: string; title: string; details: string; priority: TaskPriority; dueDate?: string }) => Promise<void>;
+  onUpdate: (id: string, payload: { title?: string; details?: string; status?: TaskStatus; priority?: TaskPriority; dueDate?: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
-  const [draft, setDraft] = useState({ title: "", details: "", ownerNodeId: selectedNodeId });
+  const [draft, setDraft] = useState({ title: "", details: "", ownerNodeId: selectedNodeId, priority: "normal" as TaskPriority, dueDate: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | TaskStatus>("all");
+  const [priorityFilter, setPriorityFilter] = useState<"all" | TaskPriority>("all");
   const editingTask = tasks.find((task) => task.id === editingId);
-  const visibleTasks = tasks.filter((task) => `${task.title} ${task.details}`.toLowerCase().includes(query.toLowerCase()));
+  const visibleTasks = tasks.filter((task) => {
+    const matchesQuery = `${task.title} ${task.details}`.toLowerCase().includes(query.toLowerCase());
+    const matchesStatus = statusFilter === "all" || task.status === statusFilter;
+    const matchesPriority = priorityFilter === "all" || task.priority === priorityFilter;
+    return matchesQuery && matchesStatus && matchesPriority;
+  });
 
   useEffect(() => {
     setDraft((current) => ({ ...current, ownerNodeId: selectedNodeId }));
@@ -492,22 +503,22 @@ function TasksView({
     const title = draft.title.trim();
     if (!title) return;
     if (editingTask) {
-      await onUpdate(editingTask.id, { title, details: draft.details.trim() });
+      await onUpdate(editingTask.id, { title, details: draft.details.trim(), priority: draft.priority, dueDate: draft.dueDate || null });
       setEditingId(null);
     } else {
-      await onCreate({ ownerNodeId: draft.ownerNodeId, title, details: draft.details.trim() });
+      await onCreate({ ownerNodeId: draft.ownerNodeId, title, details: draft.details.trim(), priority: draft.priority, dueDate: draft.dueDate || undefined });
     }
-    setDraft({ title: "", details: "", ownerNodeId: selectedNodeId });
+    setDraft({ title: "", details: "", ownerNodeId: selectedNodeId, priority: "normal", dueDate: "" });
   }, [draft, editingTask, onCreate, onUpdate, selectedNodeId]);
 
   const startEdit = (task: Task) => {
     setEditingId(task.id);
-    setDraft({ title: task.title, details: task.details, ownerNodeId: task.ownerNodeId });
+    setDraft({ title: task.title, details: task.details, ownerNodeId: task.ownerNodeId, priority: task.priority, dueDate: task.dueDate ? toDateInput(task.dueDate) : "" });
   };
 
   const newTask = useCallback(() => {
     setEditingId(null);
-    setDraft({ title: "", details: "", ownerNodeId: selectedNodeId });
+    setDraft({ title: "", details: "", ownerNodeId: selectedNodeId, priority: "normal", dueDate: "" });
   }, [selectedNodeId]);
 
   useKeyboardShortcuts({ onSave: saveTask, onNew: newTask });
@@ -521,6 +532,21 @@ function TasksView({
         </div>
         <OwnerSelect nodes={nodes} value={draft.ownerNodeId} onChange={(ownerNodeId) => setDraft({ ...draft, ownerNodeId })} disabled={!!editingTask} />
         <Input value={draft.title} placeholder="Task title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+        <div className="editor-fields">
+          <Select value={draft.priority} onValueChange={(priority) => setDraft({ ...draft, priority: priority as TaskPriority })}>
+            <SelectTrigger>
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent>
+              {(["low", "normal", "high", "urgent"] as TaskPriority[]).map((priority) => (
+                <SelectItem value={priority} key={priority}>
+                  {priorityLabel(priority)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input type="date" value={draft.dueDate} onChange={(event) => setDraft({ ...draft, dueDate: event.target.value })} />
+        </div>
         <Textarea
           className="compact"
           value={draft.details}
@@ -550,6 +576,31 @@ function TasksView({
           <Search size={16} />
           <Input value={query} placeholder="Search tasks" onChange={(event) => setQuery(event.target.value)} />
         </div>
+        <div className="filter-row">
+          <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as "all" | TaskStatus)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All status</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="complete">Complete</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as "all" | TaskPriority)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All priority</SelectItem>
+              {(["low", "normal", "high", "urgent"] as TaskPriority[]).map((priority) => (
+                <SelectItem value={priority} key={priority}>
+                  {priorityLabel(priority)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="item-list">
           {visibleTasks.map((task) => (
             <div className={`todo task-row ${task.status === "complete" ? "done" : ""}`} key={task.id}>
@@ -558,11 +609,14 @@ function TasksView({
                   <Checkbox checked={task.status === "complete"} onCheckedChange={(checked) => onUpdate(task.id, { status: checked ? "complete" : "open" })} />
                   <span className="todo-title">{task.title}</span>
                 </label>
-                <Badge>{nodeLabel(nodes, task.ownerNodeId)}</Badge>
+                <div className="row badge-row">
+                  <Badge>{priorityLabel(task.priority)}</Badge>
+                  <Badge>{nodeLabel(nodes, task.ownerNodeId)}</Badge>
+                </div>
               </div>
               {task.details && <p className="muted item-body">{task.details}</p>}
               <div className="item-actions">
-                <span className="muted">{formatDate(task.completedAt ?? task.createdAt)}</span>
+                <span className="muted">{task.dueDate ? `Due ${formatDate(task.dueDate)}` : formatDate(task.completedAt ?? task.createdAt)}</span>
                 <Button type="button" variant="ghost" size="sm" onClick={() => startEdit(task)}>
                   <Edit3 size={14} /> Edit
                 </Button>
@@ -590,8 +644,8 @@ function NotesView({
   notes: MeetingNote[];
   nodes: TeamNode[];
   selectedNodeId: string;
-  onCreate: (payload: { ownerNodeId: string; title: string; date: string; content: string }) => Promise<MeetingNote>;
-  onUpdate: (id: string, payload: { title?: string; date?: string; content?: string }) => Promise<void>;
+  onCreate: (payload: { ownerNodeId: string; title: string; date: string; content: string; tags: string }) => Promise<MeetingNote>;
+  onUpdate: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
   const [activeId, setActiveId] = useState(notes[0]?.id ?? "");
@@ -610,9 +664,9 @@ function NotesView({
   const saveNote = useCallback(async () => {
     const title = draft.title.trim() || "Untitled meeting";
     if (activeNote) {
-      await onUpdate(activeNote.id, { title, date: draft.date, content: draft.content });
+      await onUpdate(activeNote.id, { title, date: draft.date, content: draft.content, tags: draft.tags });
     } else {
-      const created = await onCreate({ ownerNodeId: draft.ownerNodeId, title, date: draft.date, content: draft.content });
+      const created = await onCreate({ ownerNodeId: draft.ownerNodeId, title, date: draft.date, content: draft.content, tags: draft.tags });
       setActiveId(created.id);
     }
   }, [activeNote, draft, onCreate, onUpdate]);
@@ -642,7 +696,7 @@ function NotesView({
     try {
       const content = await file.text();
       const title = file.name.replace(/\.(md|markdown|txt)$/i, "");
-      const created = await onCreate({ ownerNodeId: selectedNodeId, title, date: today(), content });
+      const created = await onCreate({ ownerNodeId: selectedNodeId, title, date: today(), content, tags: "" });
       setActiveId(created.id);
     } catch {
       setUploadError("This file could not be read.");
@@ -669,6 +723,7 @@ function NotesView({
             <button className={`note-tab ${note.id === activeId ? "active" : ""}`} key={note.id} onClick={() => setActiveId(note.id)}>
               <span>{note.title}</span>
               <small>{nodeLabel(nodes, note.ownerNodeId)} · {formatDate(note.date)}</small>
+              {note.tags && <small>{note.tags}</small>}
             </button>
           ))}
           {!notes.length && <EmptyState title="No notes yet" text="Create a note or upload a markdown file." actionLabel="New note" onAction={newNote} />}
@@ -685,6 +740,7 @@ function NotesView({
           <Input value={draft.title} placeholder="Meeting title" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
           <Input type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
         </div>
+        <Input value={draft.tags} placeholder="Tags, comma separated" onChange={(event) => setDraft({ ...draft, tags: event.target.value })} />
         <Textarea className="markdown-source" value={draft.content} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
         <div className="row-between">
           <Button type="button" variant="secondary" disabled={!activeNote} onClick={() => activeNote && confirmAction("Delete this note?", () => deleteNote(activeNote.id))}>
@@ -715,7 +771,12 @@ function SummaryView({ tasks, notes, period }: { tasks: Task[]; notes: MeetingNo
       <Card className="stack summary-panel">
         <div className="row-between">
           <h2>{periodLabel(period)} summary</h2>
-          <Badge>{tasks.length + notes.length} records</Badge>
+          <div className="row">
+            <Badge>{tasks.length + notes.length} records</Badge>
+            <Button type="button" size="sm" variant="secondary" onClick={() => exportSummaryMarkdown(tasks, notes, period)}>
+              <Download size={14} /> Export
+            </Button>
+          </div>
         </div>
         <div className="summary-section">
           <h3>Completed tasks</h3>
@@ -743,6 +804,7 @@ function AchievementsView({ tasks, notes, period }: { tasks: Task[]; notes: Meet
       value: stats.completedTasks,
       target: 5,
       text: "Completed tasks in the selected period.",
+      sources: tasks.filter((task) => task.status === "complete").map((task) => task.title),
     },
     {
       id: "notes",
@@ -750,6 +812,7 @@ function AchievementsView({ tasks, notes, period }: { tasks: Task[]; notes: Meet
       value: stats.notes,
       target: 3,
       text: "Saved meeting notes with dates and content.",
+      sources: notes.map((note) => note.title),
     },
     {
       id: "archive",
@@ -757,6 +820,7 @@ function AchievementsView({ tasks, notes, period }: { tasks: Task[]; notes: Meet
       value: tasks.length + notes.length,
       target: 10,
       text: "Total historical task and note records.",
+      sources: [...tasks.map((task) => task.title), ...notes.map((note) => note.title)],
     },
   ];
 
@@ -774,6 +838,15 @@ function AchievementsView({ tasks, notes, period }: { tasks: Task[]; notes: Meet
               </div>
               <h2>{achievement.title}</h2>
               <p className="muted">{achievement.text}</p>
+              <details className="achievement-detail">
+                <summary>Source records</summary>
+                <ul>
+                  {achievement.sources.slice(0, 6).map((source) => (
+                    <li key={source}>{source}</li>
+                  ))}
+                  {!achievement.sources.length && <li>No source records yet</li>}
+                </ul>
+              </details>
               <div className="progress-track">
                 <span style={{ width: `${Math.min(100, (achievement.value / achievement.target) * 100)}%` }} />
               </div>
@@ -1068,7 +1141,7 @@ function useMiraApi() {
         if (!ownerNodeId) continue;
         const created = await request<Task>("/tasks", {
           method: "POST",
-          body: JSON.stringify({ ownerNodeId, title: task.title, details: task.details }),
+          body: JSON.stringify({ ownerNodeId, title: task.title, details: task.details, priority: task.priority, dueDate: task.dueDate }),
         });
         if (task.status === "complete") {
           await request(`/tasks/${created.id}`, {
@@ -1083,7 +1156,7 @@ function useMiraApi() {
         if (!ownerNodeId) continue;
         await request("/notes", {
           method: "POST",
-          body: JSON.stringify({ ownerNodeId, title: note.title, date: note.date, content: note.content }),
+          body: JSON.stringify({ ownerNodeId, title: note.title, date: note.date, content: note.content, tags: note.tags || "" }),
         });
       }
 
@@ -1141,19 +1214,19 @@ function useMiraApi() {
     updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) =>
       mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteTeamNode: (id: string) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),
-    createTask: (payload: { ownerNodeId: string; title: string; details: string }) =>
+    createTask: (payload: { ownerNodeId: string; title: string; details: string; priority: TaskPriority; dueDate?: string }) =>
       mutate(() => request("/tasks", { method: "POST", body: JSON.stringify(payload) })),
-    updateTask: (id: string, payload: { title?: string; details?: string; status?: TaskStatus }) =>
+    updateTask: (id: string, payload: { title?: string; details?: string; status?: TaskStatus; priority?: TaskPriority; dueDate?: string | null }) =>
       mutate(() => request(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteTask: (id: string) => mutate(() => request(`/tasks/${id}`, { method: "DELETE" })),
-    createNote: async (payload: { ownerNodeId: string; title: string; date: string; content: string }) => {
+    createNote: async (payload: { ownerNodeId: string; title: string; date: string; content: string; tags: string }) => {
       let created: MeetingNote | null = null;
       await mutate(async () => {
         created = await request<MeetingNote>("/notes", { method: "POST", body: JSON.stringify(payload) });
       });
       return created!;
     },
-    updateNote: (id: string, payload: { title?: string; date?: string; content?: string }) =>
+    updateNote: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) =>
       mutate(() => request(`/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteNote: (id: string) => mutate(() => request(`/notes/${id}`, { method: "DELETE" })),
   };
@@ -1165,7 +1238,7 @@ function resolveRouteFromHash(): Route {
 }
 
 function createBlankNote(ownerNodeId: string): MeetingNote {
-  return { id: "", ownerNodeId, title: "", date: today(), updatedAt: today(), content: "## Meeting notes\n\n- " };
+  return { id: "", ownerNodeId, title: "", date: today(), tags: "", updatedAt: today(), content: "## Meeting notes\n\n- " };
 }
 
 function buildStats(tasks: Task[], notes: MeetingNote[]) {
@@ -1247,6 +1320,10 @@ function periodLabel(period: Period) {
   return period.charAt(0).toUpperCase() + period.slice(1);
 }
 
+function priorityLabel(priority: TaskPriority) {
+  return priority.charAt(0).toUpperCase() + priority.slice(1);
+}
+
 function wordCount(value: string) {
   return value.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -1269,14 +1346,46 @@ function renderMarkdown(markdown: string) {
   return escaped
     .split("\n")
     .map((line) => {
-      if (line.startsWith("### ")) return `<h3>${line.slice(4)}</h3>`;
-      if (line.startsWith("## ")) return `<h2>${line.slice(3)}</h2>`;
-      if (line.startsWith("# ")) return `<h1>${line.slice(2)}</h1>`;
-      if (line.startsWith("- ")) return `<li>${line.slice(2)}</li>`;
+      if (line.startsWith("### ")) return `<h3>${renderInlineMarkdown(line.slice(4))}</h3>`;
+      if (line.startsWith("## ")) return `<h2>${renderInlineMarkdown(line.slice(3))}</h2>`;
+      if (line.startsWith("# ")) return `<h1>${renderInlineMarkdown(line.slice(2))}</h1>`;
+      if (line.startsWith("- ")) return `<li>${renderInlineMarkdown(line.slice(2))}</li>`;
       if (!line.trim()) return "";
-      return `<p>${line}</p>`;
+      return `<p>${renderInlineMarkdown(line)}</p>`;
     })
     .join("");
+}
+
+function renderInlineMarkdown(value: string) {
+  return value
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+}
+
+function exportSummaryMarkdown(tasks: Task[], notes: MeetingNote[], period: Period) {
+  const completed = tasks.filter((task) => task.status === "complete");
+  const open = tasks.filter((task) => task.status === "open");
+  const lines = [
+    `# ${periodLabel(period)} Mira Summary`,
+    "",
+    "## Completed tasks",
+    ...(completed.length ? completed.map((task) => `- ${task.title}${task.details ? `: ${task.details}` : ""}`) : ["- No completed tasks"]),
+    "",
+    "## Open tasks",
+    ...(open.length ? open.map((task) => `- ${task.title}${task.dueDate ? ` (due ${formatDate(task.dueDate)})` : ""}`) : ["- No open tasks"]),
+    "",
+    "## Meeting notes",
+    ...(notes.length ? notes.map((note) => `- ${note.title}${note.tags ? ` [${note.tags}]` : ""}: ${firstLines(note.content)}`) : ["- No meeting notes"]),
+    "",
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `mira-summary-${period}-${today()}.md`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function parseWorkspaceExport(text: string): WorkspaceExport {

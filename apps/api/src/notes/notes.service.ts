@@ -37,6 +37,7 @@ export class NotesService {
         title: payload.title.trim(),
         date: new Date(payload.date),
         content: payload.content,
+        tags: payload.tags?.trim() || "",
       },
     });
   }
@@ -49,6 +50,7 @@ export class NotesService {
     if (payload.title !== undefined) data.title = payload.title.trim();
     if (payload.date !== undefined) data.date = new Date(payload.date);
     if (payload.content !== undefined) data.content = payload.content;
+    if (payload.tags !== undefined) data.tags = payload.tags.trim();
 
     return this.prisma.meetingNote.update({ where: { id }, data });
   }
