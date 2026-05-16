@@ -6,7 +6,7 @@ import { TaskPriority, TaskStatus } from "../common/workspace-types";
 import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
-import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, QueryLlmWikiDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
+import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, QueryLlmWikiDto, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
 import { MeService } from "./me.service";
 
 @UseGuards(JwtAuthGuard)
@@ -41,8 +41,22 @@ export class MeController {
   }
 
   @Get("llm-wiki")
-  llmWikiOverview(@CurrentUser() user: AuthUser) {
-    return this.me.llmWikiOverview(user);
+  llmWikiOverview(@CurrentUser() user: AuthUser, @Query("ownerId") ownerId?: string) {
+    return this.me.llmWikiOverview(user, ownerId);
+  }
+
+  @Get("llm-wiki/owners")
+  llmWikiOwners(@CurrentUser() user: AuthUser) {
+    return this.me.llmWikiOwners(user);
+  }
+
+  @Get("llm-wiki/reference-stats")
+  llmWikiReferenceStats(
+    @CurrentUser() user: AuthUser,
+    @Query("period") period: GenerateLlmWikiDto["period"] = "weekly",
+    @Query("scope") scope: NonNullable<GenerateLlmWikiDto["scope"]> = "personal",
+  ) {
+    return this.me.llmWikiReferenceStats(user, period, scope);
   }
 
   @Post("llm-wiki/sources")
@@ -71,8 +85,18 @@ export class MeController {
   }
 
   @Get("llm-wiki/pages")
-  readLlmWikiPage(@CurrentUser() user: AuthUser, @Query("path") path: string) {
-    return this.me.readLlmWikiPage(user, path);
+  readLlmWikiPage(@CurrentUser() user: AuthUser, @Query("path") path: string, @Query("ownerId") ownerId?: string) {
+    return this.me.readLlmWikiPage(user, path, ownerId);
+  }
+
+  @Patch("llm-wiki/pages")
+  updateLlmWikiPage(@CurrentUser() user: AuthUser, @Body() payload: UpdateLlmWikiPageDto) {
+    return this.me.updateLlmWikiPage(user, payload);
+  }
+
+  @Delete("llm-wiki/pages")
+  deleteLlmWikiPage(@CurrentUser() user: AuthUser, @Query("path") path: string) {
+    return this.me.deleteLlmWikiPage(user, path);
   }
 
   @Post("tasks")

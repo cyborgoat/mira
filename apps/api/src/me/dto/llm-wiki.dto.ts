@@ -24,6 +24,10 @@ export class GenerateLlmWikiDto {
   @IsIn(["daily", "weekly", "monthly", "historical"])
   period!: "daily" | "weekly" | "monthly" | "historical";
 
+  @IsOptional()
+  @IsIn(["personal", "team"])
+  scope?: "personal" | "team";
+
   @IsIn(["en", "zh"])
   language!: "en" | "zh";
 }
@@ -45,4 +49,14 @@ export class QueryLlmWikiDto {
 export class LintLlmWikiDto {
   @IsIn(["en", "zh"])
   language!: "en" | "zh";
+}
+
+export class UpdateLlmWikiPageDto {
+  @IsString()
+  @MinLength(1)
+  path!: string;
+
+  @IsString()
+  @MinLength(1)
+  content!: string;
 }

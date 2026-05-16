@@ -2,7 +2,7 @@ import { BadGatewayException, BadRequestException, Injectable, NotFoundException
 import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import * as https from "node:https";
 import * as net from "node:net";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
@@ -29,6 +29,8 @@ export type LlmWikiOverview = {
   pages: LlmWikiPage[];
   index: string;
   log: string;
+  owner?: LlmWikiOwner;
+  referenceStats?: LlmWikiReferenceStats;
 };
 
 export type LlmWikiQueryResult = {
@@ -43,12 +45,29 @@ export type LlmWikiIngestResult = {
   summary: string;
   writtenPages: string[];
   logEntry?: string;
+  referenceStats?: LlmWikiReferenceStats;
 };
 
 export type LlmWikiLintResult = {
   findings: string[];
   notes: string;
   logEntry?: string;
+};
+
+export type LlmWikiOwner = {
+  id: string;
+  name: string;
+  title: string | null;
+  email: string;
+  teamNodeId: string | null;
+  canEdit: boolean;
+};
+
+export type LlmWikiReferenceStats = {
+  wikiPages: number;
+  tasks: number;
+  meetingNotes: number;
+  resources: number;
 };
 
 type Provider = "openai" | "openrouter" | "anthropic" | "custom-openai-compatible";
@@ -227,6 +246,33 @@ export class AiService {
       path: this.toPosix(relative(vault.wikiDir, filePath)),
       content: await readFile(filePath, "utf8"),
     };
+  }
+
+  async updateWikiPage(userId: string, payload: { path: string; content: string }) {
+    const vault = await this.ensureVault(userId);
+    if (payload.path === "log.md") throw new BadRequestException("The wiki log cannot be edited");
+    const filePath = this.resolveWikiPath(vault.wikiDir, payload.path);
+    if (!existsSync(filePath)) throw new NotFoundException("Wiki page not found");
+    await writeFile(filePath, payload.content.endsWith("\n") ? payload.content : `${payload.content}\n`, "utf8");
+    await this.appendLog(vault.wikiDir, `edit | ${this.toPosix(relative(vault.wikiDir, filePath))}`);
+    return {
+      path: this.toPosix(relative(vault.wikiDir, filePath)),
+      content: await readFile(filePath, "utf8"),
+    };
+  }
+
+  async deleteWikiPage(userId: string, pagePath: string) {
+    const vault = await this.ensureVault(userId);
+    const normalized = this.safeRelative(pagePath);
+    if (!normalized.startsWith(`pages${sep}`) && !normalized.startsWith("pages/")) {
+      throw new BadRequestException("Only generated pages can be deleted");
+    }
+    const filePath = this.resolveWikiPath(vault.wikiDir, normalized);
+    if (!existsSync(filePath)) throw new NotFoundException("Wiki page not found");
+    await unlink(filePath);
+    const deletedPath = this.toPosix(relative(vault.wikiDir, filePath));
+    await this.appendLog(vault.wikiDir, `delete | ${deletedPath}`);
+    return { path: deletedPath, deleted: true };
   }
 
   private async ensureVault(userId: string) {

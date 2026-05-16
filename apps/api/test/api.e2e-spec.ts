@@ -241,13 +241,70 @@ describe("Mira Nest API", () => {
     const generated = await request(app.getHttpServer())
       .post("/me/llm-wiki/generate")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ period: "weekly", language: "en" })
+      .send({ period: "weekly", scope: "personal", language: "en" })
       .expect(201);
     expect(generated.body.summary).toBe("Roadmap source ingested.");
     let aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(aiBody.messages[1].content).toContain("Source name: workspace-weekly");
+    expect(aiBody.messages[1].content).toContain("Source name: workspace-personal-weekly");
+    expect(aiBody.messages[1].content).toContain("Scope: personal");
     expect(aiBody.messages[1].content).toContain("Review onboarding wiki scope");
     expect(aiBody.messages[1].content).not.toContain("Polish LLM Wiki console states");
+    expect(generated.body.referenceStats.tasks).toBeGreaterThan(0);
+
+    const teamGenerated = await request(app.getHttpServer())
+      .post("/me/llm-wiki/generate")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ period: "weekly", scope: "team", language: "en" })
+      .expect(201);
+    expect(teamGenerated.body.referenceStats.tasks).toBeGreaterThan(generated.body.referenceStats.tasks);
+    aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
+    expect(aiBody.messages[1].content).toContain("Source name: workspace-team-weekly");
+    expect(aiBody.messages[1].content).toContain("Scope: team");
+    expect(aiBody.messages[1].content).toContain("Review onboarding wiki scope");
+    expect(aiBody.messages[1].content).toContain("Polish LLM Wiki console states");
+
+    const teamStats = await request(app.getHttpServer())
+      .get("/me/llm-wiki/reference-stats?period=weekly&scope=team")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    expect(teamStats.body.wikiPages).toBeGreaterThan(0);
+    expect(teamStats.body.tasks).toBe(teamGenerated.body.referenceStats.tasks);
+    expect(teamStats.body.meetingNotes).toBe(teamGenerated.body.referenceStats.meetingNotes);
+
+    await request(app.getHttpServer())
+      .post("/me/llm-wiki/generate")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .send({ period: "weekly", scope: "personal", language: "en" })
+      .expect(201);
+    aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
+    expect(aiBody.messages[1].content).toContain("Polish LLM Wiki console states");
+    expect(aiBody.messages[1].content).not.toContain("Review onboarding wiki scope");
+
+    const owners = await request(app.getHttpServer())
+      .get("/me/llm-wiki/owners")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    const alexOwner = owners.body.find((owner: { email: string }) => owner.email === "alex@mira.local");
+    expect(alexOwner.name).toBe("Alex Chen");
+
+    const alexWiki = await request(app.getHttpServer())
+      .get(`/me/llm-wiki?ownerId=${alexOwner.id}`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    expect(alexWiki.body.owner.name).toBe("Alex Chen");
+    expect(alexWiki.body.owner.canEdit).toBe(false);
+    expect(alexWiki.body.referenceStats.wikiPages).toBeGreaterThan(0);
+    expect(alexWiki.body.referenceStats.tasks).toBeGreaterThan(0);
+
+    await request(app.getHttpServer())
+      .get(`/me/llm-wiki/pages?ownerId=${alexOwner.id}&path=pages%2Froadmap.md`)
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get("/me/llm-wiki?ownerId=usr_manager")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .expect(403);
 
     const ingest = await request(app.getHttpServer())
       .post("/me/llm-wiki/ingest")
@@ -296,6 +353,22 @@ describe("Mira Nest API", () => {
     expect(wikiAnswer.body.savedPage).toBe("pages/roadmap-answer.md");
     aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
     expect(aiBody.messages[1].content).toContain("# Roadmap");
+
+    const editedPage = await request(app.getHttpServer())
+      .patch("/me/llm-wiki/pages")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ path: "pages/roadmap-answer.md", content: "# Roadmap Answer\n\nEdited owner page." })
+      .expect(200);
+    expect(editedPage.body.content).toContain("Edited owner page.");
+
+    await request(app.getHttpServer())
+      .delete("/me/llm-wiki/pages?path=pages%2Froadmap-answer.md")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get("/me/llm-wiki/pages?path=pages%2Froadmap-answer.md")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(404);
 
     await request(app.getHttpServer())
       .get("/me/llm-wiki/pages?path=..%2Fsecret.md")

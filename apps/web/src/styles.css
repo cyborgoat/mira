@@ -698,10 +698,55 @@ label strong {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.llm-wiki-metrics {
+.llm-wiki-owner-row {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+}
+
+.field-group {
+  display: grid;
+  gap: 6px;
+}
+
+.field-group label {
+  color: var(--mira-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.wiki-owner-card {
+  align-items: center;
+  background: var(--mira-soft);
+  border: 1px solid var(--mira-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 38px;
+  padding: 7px 9px;
+}
+
+.wiki-owner-card span {
+  color: var(--mira-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-wiki-controls {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.llm-wiki-metrics {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, auto);
 }
 
 .llm-wiki-metrics span {
@@ -788,6 +833,11 @@ label strong {
 
 .llm-wiki-reader .markdown {
   min-height: 380px;
+}
+
+.wiki-editor {
+  min-height: 420px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 .llm-wiki-tools {
@@ -1209,6 +1259,15 @@ label strong {
     position: static;
   }
 
+  .llm-wiki-command-main,
+  .llm-wiki-owner-row {
+    grid-template-columns: 1fr;
+  }
+
+  .llm-wiki-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .editor-panel {
     position: static;
   }
@@ -1248,6 +1307,8 @@ label strong {
   .summary-item,
   .llm-wiki-command-main,
   .llm-wiki-generate-row,
+  .llm-wiki-owner-row,
+  .wiki-owner-card,
   .editor-fields,
   .filter-row,
   .settings-form {

@@ -118,6 +118,24 @@ type LlmWikiOverview = {
   pages: LlmWikiPage[];
   index: string;
   log: string;
+  owner: LlmWikiOwner;
+  referenceStats: LlmWikiReferenceStats;
+};
+
+type LlmWikiOwner = {
+  id: string;
+  name: string;
+  title: string | null;
+  email: string;
+  teamNodeId: string | null;
+  canEdit: boolean;
+};
+
+type LlmWikiReferenceStats = {
+  wikiPages: number;
+  tasks: number;
+  meetingNotes: number;
+  resources: number;
 };
 
 type LlmWikiQueryResult = {
@@ -132,6 +150,7 @@ type LlmWikiIngestResult = {
   summary: string;
   writtenPages: string[];
   logEntry?: string;
+  referenceStats?: LlmWikiReferenceStats;
 };
 
 type LlmWikiLintResult = {
@@ -274,13 +293,19 @@ function App() {
         {route === "stats" && <StatsView view={activeView} period={period} nodes={api.teamNodes} showOwners={viewMode === "team"} />}
         {route === "llm-wiki" && (
           <LlmWikiView
+            user={api.user}
+            canViewTeam={Boolean(api.user?.canViewTeam)}
             onLoad={api.loadLlmWiki}
+            onLoadOwners={api.loadLlmWikiOwners}
+            onLoadReferenceStats={api.loadLlmWikiReferenceStats}
             onGenerate={api.generateLlmWiki}
             onUpload={api.uploadLlmWikiSource}
             onIngest={api.ingestLlmWikiSource}
             onQuery={api.queryLlmWiki}
             onLint={api.lintLlmWiki}
             onReadPage={api.readLlmWikiPage}
+            onUpdatePage={api.updateLlmWikiPage}
+            onDeletePage={api.deleteLlmWikiPage}
           />
         )}
         {route === "settings" && (
@@ -754,52 +779,110 @@ function AchievementsView({ tasks, notes }: { tasks: Task[]; notes: MeetingNote[
 }
 
 function LlmWikiView({
+  user,
+  canViewTeam,
   onLoad,
+  onLoadOwners,
+  onLoadReferenceStats,
   onGenerate,
   onUpload,
   onIngest,
   onQuery,
   onLint,
   onReadPage,
+  onUpdatePage,
+  onDeletePage,
 }: {
-  onLoad: () => Promise<LlmWikiOverview>;
-  onGenerate: (payload: { period: LlmWikiPeriod; language: "en" | "zh" }) => Promise<LlmWikiIngestResult>;
+  user: User | null;
+  canViewTeam: boolean;
+  onLoad: (ownerId?: string) => Promise<LlmWikiOverview>;
+  onLoadOwners: () => Promise<LlmWikiOwner[]>;
+  onLoadReferenceStats: (payload: { period: LlmWikiPeriod; scope: "personal" | "team" }) => Promise<LlmWikiReferenceStats>;
+  onGenerate: (payload: { period: LlmWikiPeriod; scope: "personal" | "team"; language: "en" | "zh" }) => Promise<LlmWikiIngestResult>;
   onUpload: (payload: { filename: string; content: string }) => Promise<LlmWikiSource>;
   onIngest: (payload: { sourcePath: string; language: "en" | "zh" }) => Promise<LlmWikiIngestResult>;
   onQuery: (payload: { question: string; language: "en" | "zh"; saveAsPage?: boolean }) => Promise<LlmWikiQueryResult>;
   onLint: (payload: { language: "en" | "zh" }) => Promise<LlmWikiLintResult>;
-  onReadPage: (path: string) => Promise<LlmWikiPageContent>;
+  onReadPage: (path: string, ownerId?: string) => Promise<LlmWikiPageContent>;
+  onUpdatePage: (payload: { path: string; content: string }) => Promise<LlmWikiPageContent>;
+  onDeletePage: (path: string) => Promise<{ path: string; deleted: boolean }>;
 }) {
   const { t, i18n: i18nInstance } = useTranslation();
   const [overview, setOverview] = useState<LlmWikiOverview | null>(null);
+  const [owners, setOwners] = useState<LlmWikiOwner[]>([]);
+  const [selectedOwnerId, setSelectedOwnerId] = useState(user?.id ?? "");
   const [wikiPeriod, setWikiPeriod] = useState<LlmWikiPeriod>("weekly");
+  const [wikiScope, setWikiScope] = useState<"personal" | "team">("personal");
   const [selectedSource, setSelectedSource] = useState("");
   const [selectedPage, setSelectedPage] = useState("index.md");
   const [pageContent, setPageContent] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [saveAsPage, setSaveAsPage] = useState(false);
   const [lintResult, setLintResult] = useState<LlmWikiLintResult | null>(null);
+  const [generationStats, setGenerationStats] = useState<LlmWikiReferenceStats | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const language = i18nInstance.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
-  const sourceCount = overview?.sources.length ?? 0;
-  const pageCount = overview?.pages.length ?? 0;
+  const activeOwner = overview?.owner ?? owners.find((owner) => owner.id === selectedOwnerId);
+  const canEditWiki = Boolean(activeOwner?.canEdit);
+  const referenceStats = (canEditWiki ? generationStats : null) ?? overview?.referenceStats ?? {
+    wikiPages: overview?.pages.length ?? 0,
+    tasks: 0,
+    meetingNotes: 0,
+    resources: overview?.sources.length ?? 0,
+  };
+  const pageCount = referenceStats.wikiPages;
 
-  const refresh = async () => {
-    const next = await onLoad();
+  const refresh = async (ownerId = selectedOwnerId) => {
+    const next = await onLoad(ownerId || undefined);
     setOverview(next);
-    setPageContent(selectedPage === "log.md" ? next.log : selectedPage === "index.md" ? next.index : pageContent);
-    if (!selectedSource && next.sources[0]) setSelectedSource(next.sources[0].path);
+    setSelectedOwnerId(next.owner.id);
+    if (selectedPage === "log.md") setPageContent(next.log);
+    else if (selectedPage === "index.md") setPageContent(next.index);
+    else if (next.pages.some((page) => page.path === selectedPage)) setPageContent((await onReadPage(selectedPage, next.owner.id)).content);
+    else {
+      setSelectedPage("index.md");
+      setPageContent(next.index);
+    }
+    setEditContent("");
+    setEditing(false);
+    if (!next.sources.some((source) => source.path === selectedSource)) setSelectedSource(next.sources[0]?.path ?? "");
     return next;
   };
 
   useEffect(() => {
-    void refresh().catch((err) => setError(errorMessage(err)));
+    void (async () => {
+      const nextOwners = await onLoadOwners();
+      setOwners(nextOwners);
+      const ownerId = selectedOwnerId || user?.id || nextOwners[0]?.id || "";
+      await refresh(ownerId);
+    })().catch((err) => setError(errorMessage(err)));
   }, []);
+
+  useEffect(() => {
+    if (!canEditWiki) {
+      setGenerationStats(null);
+      return;
+    }
+    let cancelled = false;
+    void onLoadReferenceStats({ period: wikiPeriod, scope: wikiScope })
+      .then((stats) => {
+        if (!cancelled) setGenerationStats(stats);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(errorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canEditWiki, wikiPeriod, wikiScope]);
 
   const uploadSource = async (file: File | undefined) => {
     if (!file) return;
+    if (!canEditWiki) return;
     const name = file.name.toLowerCase();
     if (!name.endsWith(".md") && !name.endsWith(".markdown") && !name.endsWith(".txt")) {
       setError(t("llmWiki.uploadError"));
@@ -819,12 +902,14 @@ function LlmWikiView({
   };
 
   const generateWorkspaceWiki = async () => {
+    if (!canEditWiki) return;
     setLoading(true);
     setError("");
     try {
-      const result = await onGenerate({ period: wikiPeriod, language });
+      const result = await onGenerate({ period: wikiPeriod, scope: wikiScope, language });
       setAnswer(result.summary);
       await refresh();
+      setGenerationStats(result.referenceStats ?? null);
       const writtenPage = result.writtenPages.find((path) => path.startsWith("pages/"));
       if (writtenPage) await openPage(writtenPage);
       else await openPage("index.md");
@@ -836,7 +921,7 @@ function LlmWikiView({
   };
 
   const ingestSource = async () => {
-    if (!selectedSource) return;
+    if (!selectedSource || !canEditWiki) return;
     setLoading(true);
     setError("");
     try {
@@ -860,7 +945,7 @@ function LlmWikiView({
 
   const askWiki = async () => {
     const cleanQuestion = question.trim();
-    if (!cleanQuestion) return;
+    if (!cleanQuestion || !canEditWiki) return;
     setLoading(true);
     setError("");
     try {
@@ -876,6 +961,7 @@ function LlmWikiView({
   };
 
   const runLint = async () => {
+    if (!canEditWiki) return;
     setLoading(true);
     setError("");
     try {
@@ -891,6 +977,8 @@ function LlmWikiView({
 
   const openPage = async (path: string) => {
     setSelectedPage(path);
+    setEditing(false);
+    setEditContent("");
     if (path === "index.md") {
       setPageContent(overview?.index ?? "");
       return;
@@ -902,8 +990,65 @@ function LlmWikiView({
     setLoading(true);
     setError("");
     try {
-      const page = await onReadPage(path);
+      const page = await onReadPage(path, selectedOwnerId || overview?.owner.id);
       setPageContent(page.content);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startEditing = () => {
+    if (!canEditWiki || selectedPage === "log.md") return;
+    setEditContent(pageContent);
+    setEditing(true);
+  };
+
+  const savePage = async () => {
+    if (!canEditWiki || selectedPage === "log.md") return;
+    setLoading(true);
+    setError("");
+    try {
+      const updated = await onUpdatePage({ path: selectedPage, content: editContent });
+      setPageContent(updated.content);
+      setEditing(false);
+      await refresh();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deletePage = async () => {
+    if (!canEditWiki || !selectedPage.startsWith("pages/")) return;
+    if (!window.confirm(t("llmWiki.deletePageConfirm"))) return;
+    setLoading(true);
+    setError("");
+    try {
+      await onDeletePage(selectedPage);
+      setSelectedPage("index.md");
+      const next = await refresh();
+      setPageContent(next.index);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const switchOwner = async (ownerId: string) => {
+    setLoading(true);
+    setError("");
+    setSelectedOwnerId(ownerId);
+    setSelectedSource("");
+    setSelectedPage("index.md");
+    setAnswer("");
+    setLintResult(null);
+    try {
+      const next = await refresh(ownerId);
+      setPageContent(next.index);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -917,23 +1062,57 @@ function LlmWikiView({
         <div className="llm-wiki-command-main">
           <div>
             <h2>{t("llmWiki.title")}</h2>
-            <p className="muted">{t("llmWiki.help")}</p>
+            <p className="muted">
+              {activeOwner ? t("llmWiki.ownerLine", { owner: activeOwner.name }) : t("llmWiki.help")}
+            </p>
           </div>
           <div className="llm-wiki-metrics" aria-label={t("llmWiki.library")}>
-            <span><strong>{pageCount}</strong>{t("llmWiki.pageCount")}</span>
-            <span><strong>{sourceCount}</strong>{t("llmWiki.sourceCount")}</span>
+            <span><strong>{referenceStats.wikiPages}</strong>{t("llmWiki.wikiPagesMetric")}</span>
+            <span><strong>{referenceStats.tasks}</strong>{t("llmWiki.tasksMetric")}</span>
+            <span><strong>{referenceStats.meetingNotes}</strong>{t("llmWiki.notesMetric")}</span>
+            <span><strong>{referenceStats.resources}</strong>{t("llmWiki.resourcesMetric")}</span>
           </div>
         </div>
 
-        <div className="llm-wiki-generate-row">
-          <div className="segmented-switch llm-period-switch" role="group" aria-label={t("llmWiki.period")}>
-            {(["daily", "weekly", "monthly", "historical"] as const).map((period) => (
-              <button type="button" key={period} className={wikiPeriod === period ? "active" : ""} aria-pressed={wikiPeriod === period} onClick={() => setWikiPeriod(period)}>
-                {t(`llmWiki.periods.${period}`)}
-              </button>
-            ))}
+        <div className="llm-wiki-owner-row">
+          <div className="field-group">
+            <label>{t("llmWiki.owner")}</label>
+            <Select value={selectedOwnerId} onValueChange={(ownerId) => void switchOwner(ownerId)}>
+              <SelectTrigger><SelectValue placeholder={t("llmWiki.owner")} /></SelectTrigger>
+              <SelectContent>
+                {owners.map((owner) => (
+                  <SelectItem value={owner.id} key={owner.id}>{owner.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <Button type="button" disabled={loading} onClick={generateWorkspaceWiki}>
+          {activeOwner && (
+            <div className="wiki-owner-card">
+              <strong>{activeOwner.name}</strong>
+              <span>{activeOwner.title || activeOwner.email}</span>
+              <Badge>{activeOwner.canEdit ? t("llmWiki.ownerEditable") : t("llmWiki.readOnly")}</Badge>
+            </div>
+          )}
+        </div>
+
+        <div className="llm-wiki-generate-row">
+          <div className="llm-wiki-controls">
+            <div className="segmented-switch llm-period-switch" role="group" aria-label={t("llmWiki.scope")}>
+              {(["personal", "team"] as const).map((scope) => (
+                <button type="button" key={scope} disabled={scope === "team" && !canViewTeam} className={wikiScope === scope ? "active" : ""} aria-pressed={wikiScope === scope} onClick={() => setWikiScope(scope)}>
+                  {t(`llmWiki.scopes.${scope}`)}
+                </button>
+              ))}
+            </div>
+            <div className="segmented-switch llm-period-switch" role="group" aria-label={t("llmWiki.period")}>
+              {(["daily", "weekly", "monthly", "historical"] as const).map((period) => (
+                <button type="button" key={period} className={wikiPeriod === period ? "active" : ""} aria-pressed={wikiPeriod === period} onClick={() => setWikiPeriod(period)}>
+                  {t(`llmWiki.periods.${period}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Button type="button" disabled={loading || !canEditWiki} onClick={generateWorkspaceWiki}>
             <Sparkles size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.generate")}
           </Button>
         </div>
@@ -970,11 +1149,33 @@ function LlmWikiView({
           <div className="panel-heading">
             <div>
               <h2>{selectedPage}</h2>
-              <p className="muted">{t("llmWiki.markdownPreview")}</p>
+              <p className="muted">{activeOwner ? t("llmWiki.pageOwner", { owner: activeOwner.name }) : t("llmWiki.markdownPreview")}</p>
             </div>
-            <Badge>{t("llmWiki.markdown")}</Badge>
+            <div className="cluster">
+              <Badge>{t("llmWiki.markdown")}</Badge>
+              {canEditWiki && selectedPage !== "log.md" && !editing && (
+                <Button type="button" size="sm" variant="secondary" onClick={startEditing}>
+                  <Edit3 size={14} /> {t("common.edit")}
+                </Button>
+              )}
+              {canEditWiki && selectedPage.startsWith("pages/") && !editing && (
+                <Button type="button" size="sm" variant="secondary" disabled={loading} onClick={deletePage}>
+                  <Trash2 size={14} /> {t("common.delete")}
+                </Button>
+              )}
+            </div>
           </div>
-          {pageContent ? (
+          {editing ? (
+            <div className="stack">
+              <Textarea className="wiki-editor" value={editContent} onChange={(event) => setEditContent(event.target.value)} />
+              <div className="cluster">
+                <Button type="button" variant="secondary" onClick={() => setEditing(false)}>{t("llmWiki.cancelEdit")}</Button>
+                <Button type="button" disabled={loading || !editContent.trim()} onClick={savePage}>
+                  <Save size={15} /> {t("common.save")}
+                </Button>
+              </div>
+            </div>
+          ) : pageContent ? (
             <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(pageContent) }} />
           ) : (
             <EmptyState title={t("llmWiki.emptyTitle")} text={t("llmWiki.emptyText")} />
@@ -996,14 +1197,14 @@ function LlmWikiView({
             <h2>{t("llmWiki.askTitle")}</h2>
             <Textarea className="compact" value={question} placeholder={t("llmWiki.questionPlaceholder")} onChange={(event) => setQuestion(event.target.value)} />
             <label className="inline-check">
-              <Checkbox checked={saveAsPage} onCheckedChange={(checked) => setSaveAsPage(checked === true)} />
+              <Checkbox checked={saveAsPage} disabled={!canEditWiki} onCheckedChange={(checked) => setSaveAsPage(checked === true)} />
               <span>{t("llmWiki.saveAsPage")}</span>
             </label>
             <div className="cluster">
-              <Button type="button" variant="secondary" disabled={loading} onClick={runLint}>
+              <Button type="button" variant="secondary" disabled={loading || !canEditWiki} onClick={runLint}>
                 <ListChecks size={15} /> {t("llmWiki.lint")}
               </Button>
-              <Button type="button" disabled={loading || !question.trim()} onClick={askWiki}>
+              <Button type="button" disabled={loading || !question.trim() || !canEditWiki} onClick={askWiki}>
                 <Search size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.ask")}
               </Button>
             </div>
@@ -1014,6 +1215,7 @@ function LlmWikiView({
             <Input
               type="file"
               accept=".md,.markdown,.txt,text/markdown,text/plain"
+              disabled={!canEditWiki || loading}
               onChange={(event) => {
                 const input = event.currentTarget;
                 void uploadSource(input.files?.[0]).finally(() => { input.value = ""; });
@@ -1027,7 +1229,7 @@ function LlmWikiView({
                 ))}
               </SelectContent>
             </Select>
-            <Button type="button" variant="secondary" disabled={loading || !selectedSource} onClick={ingestSource}>
+            <Button type="button" variant="secondary" disabled={loading || !selectedSource || !canEditWiki} onClick={ingestSource}>
               <Upload size={15} /> {t("llmWiki.ingest")}
             </Button>
           </Card>
@@ -1561,8 +1763,11 @@ function useMiraApi() {
     },
     updateNote: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) => mutate(() => request(`/me/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteNote: (id: string) => mutate(() => request(`/me/notes/${id}`, { method: "DELETE" })),
-    loadLlmWiki: () => request<LlmWikiOverview>("/me/llm-wiki"),
-    generateLlmWiki: (payload: { period: LlmWikiPeriod; language: "en" | "zh" }) =>
+    loadLlmWiki: (ownerId?: string) => request<LlmWikiOverview>(`/me/llm-wiki${ownerId ? `?ownerId=${encodeURIComponent(ownerId)}` : ""}`),
+    loadLlmWikiOwners: () => request<LlmWikiOwner[]>("/me/llm-wiki/owners"),
+    loadLlmWikiReferenceStats: (payload: { period: LlmWikiPeriod; scope: "personal" | "team" }) =>
+      request<LlmWikiReferenceStats>(`/me/llm-wiki/reference-stats?period=${encodeURIComponent(payload.period)}&scope=${encodeURIComponent(payload.scope)}`),
+    generateLlmWiki: (payload: { period: LlmWikiPeriod; scope: "personal" | "team"; language: "en" | "zh" }) =>
       request<LlmWikiIngestResult>("/me/llm-wiki/generate", { method: "POST", body: JSON.stringify(payload) }),
     uploadLlmWikiSource: (payload: { filename: string; content: string }) =>
       request<LlmWikiSource>("/me/llm-wiki/sources", { method: "POST", body: JSON.stringify(payload) }),
@@ -1572,8 +1777,12 @@ function useMiraApi() {
       request<LlmWikiQueryResult>("/me/llm-wiki/query", { method: "POST", body: JSON.stringify(payload) }),
     lintLlmWiki: (payload: { language: "en" | "zh" }) =>
       request<LlmWikiLintResult>("/me/llm-wiki/lint", { method: "POST", body: JSON.stringify(payload) }),
-    readLlmWikiPage: (path: string) =>
-      request<LlmWikiPageContent>(`/me/llm-wiki/pages?path=${encodeURIComponent(path)}`),
+    readLlmWikiPage: (path: string, ownerId?: string) =>
+      request<LlmWikiPageContent>(`/me/llm-wiki/pages?path=${encodeURIComponent(path)}${ownerId ? `&ownerId=${encodeURIComponent(ownerId)}` : ""}`),
+    updateLlmWikiPage: (payload: { path: string; content: string }) =>
+      request<LlmWikiPageContent>("/me/llm-wiki/pages", { method: "PATCH", body: JSON.stringify(payload) }),
+    deleteLlmWikiPage: (path: string) =>
+      request<{ path: string; deleted: boolean }>(`/me/llm-wiki/pages?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
     createTeamNode: (payload: { name: string; title?: string; parentId?: string }) => mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
     updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteTeamNode: (id: string) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),
