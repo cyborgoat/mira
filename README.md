@@ -102,6 +102,7 @@ MIRA_AI_PROVIDER=openai
 MIRA_AI_API_KEY=...
 MIRA_AI_BASE_URL=https://api.openai.com/v1
 MIRA_AI_MODEL=gpt-5.2
+MIRA_AI_MAX_TOKENS=4000
 ```
 
 Supported provider values are `openai`, `openrouter`, `anthropic`, and `custom-openai-compatible`.

@@ -20,6 +20,15 @@ export type AiSummary = {
 };
 
 type Provider = "openai" | "openrouter" | "anthropic" | "custom-openai-compatible";
+type OpenAiCompatibleChoice = {
+  finish_reason?: string;
+  message?: {
+    content?: string | Array<{ text?: string; type?: string }>;
+    refusal?: string;
+    reasoning?: unknown;
+    reasoning_details?: unknown;
+  };
+};
 
 @Injectable()
 export class AiService {
@@ -46,6 +55,7 @@ export class AiService {
   private async callOpenAiCompatible(provider: Provider, apiKey: string, prompt: string) {
     const baseUrl = this.configString("MIRA_AI_BASE_URL", this.defaultBaseUrl(provider)).replace(/\/+$/, "");
     const responseFormat = provider === "openrouter" ? {} : { response_format: { type: "json_object" } };
+    const reasoning = provider === "openrouter" ? { reasoning: { effort: "none", exclude: true }, include_reasoning: false } : {};
     const response = await this.fetchJson(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -55,9 +65,10 @@ export class AiService {
       },
       body: JSON.stringify({
         model: this.model(provider),
-        max_tokens: 1600,
+        max_tokens: this.maxTokens(),
         temperature: 0.2,
         ...responseFormat,
+        ...reasoning,
         messages: [
           { role: "system", content: this.systemPrompt() },
           { role: "user", content: prompt },
@@ -65,9 +76,7 @@ export class AiService {
       }),
     });
 
-    const text = (response as { choices?: Array<{ message?: { content?: string } }> }).choices?.[0]?.message?.content;
-    if (!text) throw new BadGatewayException("AI provider returned an empty response");
-    return text;
+    return this.extractOpenAiCompatibleText(response);
   }
 
   private async callAnthropic(apiKey: string, prompt: string) {
@@ -267,6 +276,10 @@ export class AiService {
     return this.configString("MIRA_AI_MODEL", provider === "anthropic" ? "claude-3-5-sonnet-latest" : "gpt-5.2");
   }
 
+  private maxTokens() {
+    return Number(this.config.get<string>("MIRA_AI_MAX_TOKENS", "4000")) || 4000;
+  }
+
   private defaultBaseUrl(provider: Provider) {
     if (provider === "openrouter") return "https://openrouter.ai/api/v1";
     return "https://api.openai.com/v1";
@@ -296,10 +309,30 @@ export class AiService {
     return `: ${value.replace(/\s+/g, " ").slice(0, 300)}`;
   }
 
+  private extractOpenAiCompatibleText(response: unknown) {
+    const choice = (response as { choices?: OpenAiCompatibleChoice[] }).choices?.[0];
+    const message = choice?.message;
+    const content = message?.content;
+    const text = typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content.map((part) => part.text || "").join("\n")
+        : "";
+    if (text.trim()) return text;
+    if (message?.refusal?.trim()) throw new BadGatewayException(`AI provider refused the request: ${message.refusal.trim().slice(0, 300)}`);
+
+    const details = [
+      choice?.finish_reason ? `finish_reason=${choice.finish_reason}` : "",
+      message?.reasoning || message?.reasoning_details ? "response contained reasoning but no final content" : "",
+    ].filter(Boolean).join("; ");
+    throw new BadGatewayException(`AI provider returned empty final content${details ? `: ${details}` : ""}`);
+  }
+
   private systemPrompt() {
     return [
       "You are Mira's work summarizer.",
       "Return only valid JSON.",
+      "Do not include hidden reasoning, chain-of-thought, markdown fences, or prose outside the JSON object.",
       "Do not diagnose personality or mental state. Describe evidence-based work style only.",
       "Use concise, specific, professional language.",
     ].join(" ");
