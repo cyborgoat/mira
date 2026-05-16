@@ -675,6 +675,32 @@ label strong {
   margin: 8px 0 8px;
 }
 
+.ai-control-panel {
+  max-width: 900px;
+}
+
+.ai-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 8px;
+}
+
+.ai-card-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.ai-card ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--mira-muted);
+  line-height: 1.6;
+}
+
+.ai-card li + li {
+  margin-top: 6px;
+}
+
 .markdown {
   white-space: pre-wrap;
   background: oklch(0.235 0.018 255);
@@ -1064,6 +1090,7 @@ label strong {
 
   .two-col,
   .three-col,
+  .ai-card-grid,
   .notes-grid,
   .team-grid,
   .settings-layout {
@@ -1117,6 +1144,7 @@ label strong {
 
   .summary-section,
   .summary-item,
+  .ai-controls,
   .editor-fields,
   .filter-row,
   .settings-form {

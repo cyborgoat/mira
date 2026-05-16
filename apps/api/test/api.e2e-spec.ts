@@ -41,6 +41,15 @@ describe("Mira Nest API", () => {
     rmSync(dbPath, { force: true });
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+    delete process.env.MIRA_AI_PROVIDER;
+    delete process.env.MIRA_AI_API_KEY;
+    delete process.env.MIRA_AI_BASE_URL;
+    delete process.env.MIRA_AI_MODEL;
+    delete process.env.MIRA_AI_TIMEOUT_MS;
+  });
+
   it("logs in with the seeded superuser", async () => {
     const response = await request(app.getHttpServer())
       .post("/auth/login")
@@ -161,7 +170,63 @@ describe("Mira Nest API", () => {
     expect(teamTitles).toContain("Add scoped API tests");
     expect(teamTitles).not.toContain("Review team roadmap");
 
+    await request(app.getHttpServer())
+      .post("/me/ai-summary")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ mode: "personal", language: "en" })
+      .expect(503);
+
+    process.env.MIRA_AI_PROVIDER = "openai";
+    process.env.MIRA_AI_API_KEY = "test-key";
+    process.env.MIRA_AI_BASE_URL = "https://ai.example/v1";
+    process.env.MIRA_AI_MODEL = "test-model";
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              accomplishments: { title: "Accomplishments", items: ["Finished focused work."] },
+              workStyle: { title: "Work style", items: ["Uses written planning evidence."] },
+              recommendations: { title: "Recommendations", items: ["Keep clarifying owners."] },
+              risks: { title: "Risks", items: ["Watch overdue work."] },
+              evidence: { title: "Evidence", items: ["Weekly task and note records."] },
+            }),
+          },
+        }],
+      }),
+    } as Response);
+
+    const personalSummary = await request(app.getHttpServer())
+      .post("/me/ai-summary")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ mode: "personal", language: "en" })
+      .expect(201);
+    expect(personalSummary.body.sections.accomplishments.items[0]).toBe("Finished focused work.");
+    let aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("https://ai.example/v1/chat/completions");
+    expect(aiBody.model).toBe("test-model");
+    expect(aiBody.messages[1].content).toContain("Review team roadmap");
+    expect(aiBody.messages[1].content).not.toContain("Polish dashboard layout");
+
+    const alexSummary = await request(app.getHttpServer())
+      .post("/me/ai-summary")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ mode: "team", targetNodeId: "node_alex", targetScope: "person", language: "en" })
+      .expect(201);
+    expect(alexSummary.body.target.name).toBe("Alex Chen");
+    expect(alexSummary.body.target.scope).toBe("person");
+    aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
+    expect(aiBody.messages[1].content).toContain("Polish dashboard layout");
+    expect(aiBody.messages[1].content).not.toContain("Add scoped API tests");
+
     await request(app.getHttpServer()).get("/me/team-view?period=monthly").set("Authorization", `Bearer ${alexToken}`).expect(403);
+    await request(app.getHttpServer())
+      .post("/me/ai-summary")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .send({ mode: "team", targetNodeId: "node_sam", targetScope: "person", language: "en" })
+      .expect(403);
     await request(app.getHttpServer()).get("/tasks").set("Authorization", `Bearer ${managerToken}`).expect(403);
   });
 });

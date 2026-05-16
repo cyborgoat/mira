@@ -1,6 +1,6 @@
 # Mira Quickstart
 
-This guide runs the current Mira app and the NestJS backend API. The frontend uses the API for login, personal work, subordinate team view, superuser settings, tasks, notes, and stats.
+This guide runs the current Mira app and the NestJS backend API. The frontend uses the API for login, personal work, subordinate team view, AI summaries, superuser settings, tasks, notes, and stats.
 
 ## Prerequisites
 
@@ -68,6 +68,7 @@ http://localhost:5173/#dashboard
 http://localhost:5173/#tasks
 http://localhost:5173/#notes
 http://localhost:5173/#stats
+http://localhost:5173/#ai-summary
 http://localhost:5173/#settings
 ```
 
@@ -86,6 +87,19 @@ mira-workspace/mira-api.sqlite3
 The browser stores the access token under `mira-api-token-v1`. Signing out clears the token, not the API records.
 
 Set `VITE_MIRA_API_URL` for the web app if the API is not running on `http://127.0.0.1:8000`.
+
+## AI Summary Setup
+
+The AI Summarizer is configured only on the backend through `.env`. There is no frontend UI for provider or model settings.
+
+```text
+MIRA_AI_PROVIDER=openai
+MIRA_AI_API_KEY=...
+MIRA_AI_BASE_URL=https://api.openai.com/v1
+MIRA_AI_MODEL=gpt-5.2
+```
+
+Provider values supported by the API are `openai`, `openrouter`, `anthropic`, and `custom-openai-compatible`. Without `MIRA_AI_API_KEY`, the AI Summary tab will show a backend configuration error when generation is requested.
 
 ## Useful Commands
 

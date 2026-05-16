@@ -1,7 +1,8 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma, TaskPriority, TaskStatus } from "@prisma/client";
+import { MeetingNote, Prisma, Task, TaskPriority, TaskStatus, TeamNode } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
+import { AiService } from "../ai/ai.service";
 import { AuthUser } from "../auth/current-user";
 import { createId } from "../common/ids";
 import { periodStart, Period } from "../common/period";
@@ -10,6 +11,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { UsersService } from "../users/users.service";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
+import { AiSummaryDto } from "./dto/ai-summary.dto";
 
 @Injectable()
 export class MeService {
@@ -17,6 +19,7 @@ export class MeService {
     private readonly prisma: PrismaService,
     private readonly users: UsersService,
     private readonly config: ConfigService,
+    private readonly ai: AiService,
   ) {}
 
   async personalWork(user: AuthUser, filters: { period: Period; query?: string; status?: TaskStatus; priority?: TaskPriority }) {
@@ -86,6 +89,26 @@ export class MeService {
       data: { passwordHash: await bcrypt.hash(payload.newPassword, rounds) },
     });
     return { ok: true };
+  }
+
+  async aiSummary(user: AuthUser, payload: AiSummaryDto) {
+    const target = await this.resolveAiTarget(user, payload);
+    const source = await this.aiSourceData(target.nodeIds);
+    const summary = await this.ai.summarize({
+      language: payload.language,
+      prompt: this.aiPrompt(payload.language, target, source),
+    });
+    return {
+      target: {
+        nodeId: target.node.id,
+        name: target.node.name,
+        title: target.node.title,
+        scope: target.scope,
+      },
+      generatedAt: new Date().toISOString(),
+      sections: summary,
+      sourceStats: source.stats,
+    };
   }
 
   async createTask(user: AuthUser, payload: Omit<CreateTaskDto, "ownerNodeId">) {
@@ -178,6 +201,101 @@ export class MeService {
       }),
       notes: notes.filter((note) => (note as { date: Date }).date >= start),
     };
+  }
+
+  private async resolveAiTarget(user: AuthUser, payload: AiSummaryDto) {
+    const ownerNodeId = this.requireOwnNode(user);
+    const scope = payload.mode === "personal" ? "person" : (payload.targetScope || "subtree");
+    const targetNodeId = payload.mode === "personal" ? ownerNodeId : payload.targetNodeId;
+    if (!targetNodeId) throw new ForbiddenException("Team summary target is required");
+
+    if (payload.mode === "team") {
+      const allowedIds = user.isSuperuser ? await this.activeNodeIds() : await this.descendantIds(ownerNodeId);
+      if (!allowedIds.includes(targetNodeId)) throw new ForbiddenException("AI summary target is limited to your managed tree");
+    }
+
+    const node = await this.prisma.teamNode.findFirst({ where: { id: targetNodeId, active: true } });
+    if (!node) throw new NotFoundException("Team node not found");
+    const nodeIds = scope === "person" ? [targetNodeId] : [targetNodeId, ...(await this.descendantIds(targetNodeId))];
+    return { node, nodeIds, scope };
+  }
+
+  private async aiSourceData(nodeIds: string[]) {
+    const [nodes, tasks, notes] = await Promise.all([
+      this.prisma.teamNode.findMany({ where: { id: { in: nodeIds } } }),
+      this.prisma.task.findMany({ where: { ownerNodeId: { in: nodeIds } }, orderBy: { updatedAt: "desc" } }),
+      this.prisma.meetingNote.findMany({ where: { ownerNodeId: { in: nodeIds } }, orderBy: { updatedAt: "desc" } }),
+    ]);
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const weekly = this.filterByPeriod(tasks, notes, "weekly");
+    const monthly = this.filterByPeriod(tasks, notes, "monthly");
+    return {
+      weekly,
+      all: { tasks, notes },
+      stats: {
+        weekly: this.sourceStats(weekly.tasks, weekly.notes),
+        monthly: this.sourceStats(monthly.tasks, monthly.notes),
+        historical: this.sourceStats(tasks, notes),
+      },
+      owners: Object.fromEntries(nodes.map((node) => [node.id, { name: node.name, title: node.title }])),
+      taskLines: this.sourceTaskLines(weekly.tasks, nodeById),
+      noteLines: this.sourceNoteLines(weekly.notes, nodeById),
+    };
+  }
+
+  private sourceStats(tasks: Array<{ status: TaskStatus; priority?: TaskPriority }>, notes: unknown[]) {
+    const completedTasks = tasks.filter((task) => task.status === "complete").length;
+    const priorities = tasks.reduce<Record<string, number>>((result, task) => {
+      const priority = task.priority || "normal";
+      result[priority] = (result[priority] || 0) + 1;
+      return result;
+    }, {});
+    return {
+      totalTasks: tasks.length,
+      completedTasks,
+      openTasks: tasks.length - completedTasks,
+      notes: notes.length,
+      completionRate: tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0,
+      priorities,
+    };
+  }
+
+  private sourceTaskLines(tasks: Task[], nodeById: Map<string, TeamNode>) {
+    return tasks.slice(0, 30).map((task) => ({
+      owner: nodeById.get(task.ownerNodeId)?.name || "Unknown",
+      title: task.title,
+      details: task.details,
+      status: task.status,
+      priority: task.priority,
+      dueDate: task.dueDate?.toISOString() || null,
+    }));
+  }
+
+  private sourceNoteLines(notes: MeetingNote[], nodeById: Map<string, TeamNode>) {
+    return notes.slice(0, 20).map((note) => ({
+      owner: nodeById.get(note.ownerNodeId)?.name || "Unknown",
+      title: note.title,
+      tags: note.tags,
+      content: note.content.slice(0, 1200),
+    }));
+  }
+
+  private aiPrompt(language: "en" | "zh", target: { node: TeamNode; scope: string }, source: Awaited<ReturnType<MeService["aiSourceData"]>>) {
+    const outputLanguage = language === "zh" ? "Chinese" : "English";
+    return [
+      `Write in ${outputLanguage}.`,
+      `Analyze target: ${target.node.name}${target.node.title ? ` (${target.node.title})` : ""}. Scope: ${target.scope}.`,
+      "Use weekly tasks and notes as primary evidence. Use monthly and historical stats as reference.",
+      "Return JSON with exactly these keys: accomplishments, workStyle, recommendations, risks, evidence.",
+      "Each key must be an object with title:string and items:string[].",
+      "For workStyle, describe evidence-based work style only, not personality diagnosis.",
+      JSON.stringify({
+        stats: source.stats,
+        weeklyTasks: source.taskLines,
+        weeklyNotes: source.noteLines,
+        owners: source.owners,
+      }),
+    ].join("\n");
   }
 
   private requireOwnNode(user: AuthUser) {

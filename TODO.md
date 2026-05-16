@@ -18,6 +18,7 @@ The active product direction is an API-backed user-centered workspace with NestJ
 - Team View Mode: Implemented through `/me/team-view`, aggregating subordinate tasks, meeting notes, and summary statistics.
 - Team Management Tree: Implemented as superuser-only Settings through `/team/nodes` and `/team/tree`.
 - Frontend API Integration: Implemented for login, dashboard, tasks, notes, stats, team view, and settings.
+- AI Summarizer: Implemented through `/me/ai-summary` with backend-only provider configuration and personal/team scopes.
 
 ## P1 - Stabilize Local App
 
@@ -35,6 +36,7 @@ The active product direction is an API-backed user-centered workspace with NestJ
 - Richer Markdown support without unsafe HTML rendering.
 - Summary export to Markdown.
 - Achievement detail views with the source records that contributed to each metric.
+- AI summary prompt tuning and saved summary history.
 - Add responsive QA for desktop, tablet, and mobile.
 
 ## P3 - Quality
@@ -49,6 +51,5 @@ The old FastAPI backend has been replaced by the NestJS service in `apps/api`. T
 
 - Backend API state management.
 - Workspace isolation.
-- AI report generation.
 - Knowledge base, tag schema, and team portrait features.
 - Backend-driven i18n.

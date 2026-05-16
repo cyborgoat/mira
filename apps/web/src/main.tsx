@@ -13,6 +13,7 @@ import {
   Save,
   Search,
   Settings,
+  Sparkles,
   Trash2,
   Upload,
   UserRound,
@@ -32,7 +33,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import i18n from "./i18n";
 import "./styles.css";
 
-type Route = "dashboard" | "tasks" | "notes" | "stats" | "settings";
+type Route = "dashboard" | "tasks" | "notes" | "stats" | "ai-summary" | "settings";
 type ViewMode = "personal" | "team";
 type TaskStatus = "open" | "complete";
 type TaskPriority = "low" | "normal" | "high" | "urgent";
@@ -97,6 +98,17 @@ type WorkspaceExport = {
   notes: MeetingNote[];
 };
 
+type AiSummaryResult = {
+  target: { nodeId: string; name: string; title: string | null; scope: "person" | "subtree" };
+  generatedAt: string;
+  sections: Record<"accomplishments" | "workStyle" | "recommendations" | "risks" | "evidence", { title: string; items: string[] }>;
+  sourceStats: {
+    weekly: { totalTasks: number; completedTasks: number; openTasks: number; notes: number; completionRate: number };
+    monthly: { totalTasks: number; completedTasks: number; openTasks: number; notes: number; completionRate: number };
+    historical: { totalTasks: number; completedTasks: number; openTasks: number; notes: number; completionRate: number };
+  };
+};
+
 const API_URL = import.meta.env.VITE_MIRA_API_URL ?? "http://127.0.0.1:8000";
 const TOKEN_KEY = "mira-api-token-v1";
 
@@ -105,6 +117,7 @@ const nav: Array<{ key: Route; icon: React.ComponentType<{ size?: number }> }> =
   { key: "tasks", icon: ListChecks },
   { key: "notes", icon: FileText },
   { key: "stats", icon: BarChart3 },
+  { key: "ai-summary", icon: Sparkles },
   { key: "settings", icon: Settings },
 ];
 
@@ -223,6 +236,14 @@ function App() {
           />
         )}
         {route === "stats" && <StatsView view={activeView} period={period} nodes={api.teamNodes} showOwners={viewMode === "team"} />}
+        {route === "ai-summary" && (
+          <AiSummaryView
+            mode={viewMode}
+            nodes={api.teamNodes}
+            teamView={api.teamView}
+            onGenerate={api.generateAiSummary}
+          />
+        )}
         {route === "settings" && (
           <SettingsView
             user={api.user}
@@ -689,6 +710,119 @@ function AchievementsView({ tasks, notes }: { tasks: Task[]; notes: MeetingNote[
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function AiSummaryView({
+  mode,
+  nodes,
+  teamView,
+  onGenerate,
+}: {
+  mode: ViewMode;
+  nodes: TeamNode[];
+  teamView: WorkView | null;
+  onGenerate: (payload: { mode: ViewMode; targetNodeId?: string; targetScope?: "person" | "subtree"; language: "en" | "zh" }) => Promise<AiSummaryResult>;
+}) {
+  const { t, i18n: i18nInstance } = useTranslation();
+  const [targetNodeId, setTargetNodeId] = useState("");
+  const [targetScope, setTargetScope] = useState<"person" | "subtree">("person");
+  const [summary, setSummary] = useState<AiSummaryResult | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const targetIds = mode === "team" ? (teamView?.descendantIds ?? []) : [];
+  const targets = nodes.filter((node) => targetIds.includes(node.id));
+
+  useEffect(() => {
+    if (mode !== "team") return;
+    if (!targetNodeId || !targetIds.includes(targetNodeId)) setTargetNodeId(targetIds[0] ?? "");
+  }, [mode, targetIds.join("|"), targetNodeId]);
+
+  const generate = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const language = i18nInstance.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
+      const result = await onGenerate({
+        mode,
+        language,
+        targetNodeId: mode === "team" ? targetNodeId : undefined,
+        targetScope: mode === "team" ? targetScope : undefined,
+      });
+      setSummary(result);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const disabled = loading || (mode === "team" && !targetNodeId);
+
+  return (
+    <div className="stack">
+      <Card className="stack ai-control-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>{t("ai.title")}</h2>
+            <p className="muted">{mode === "team" ? t("ai.teamHelp") : t("ai.personalHelp")}</p>
+          </div>
+          <Badge>{mode === "team" ? t("mode.team") : t("mode.personal")}</Badge>
+        </div>
+        {mode === "team" && (
+          <div className="ai-controls">
+            <Select value={targetNodeId} onValueChange={setTargetNodeId}>
+              <SelectTrigger><SelectValue placeholder={t("ai.targetPlaceholder")} /></SelectTrigger>
+              <SelectContent>
+                {targets.map((node) => (
+                  <SelectItem value={node.id} key={node.id}>{nodePath(nodes, node)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={targetScope} onValueChange={(value) => setTargetScope(value as "person" | "subtree")}>
+              <SelectTrigger><SelectValue placeholder={t("ai.scope")} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="person">{t("ai.person")}</SelectItem>
+                <SelectItem value="subtree">{t("ai.subtree")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        <div className="row-between">
+          <span className="muted">{t("ai.sourceHelp")}</span>
+          <Button type="button" disabled={disabled} onClick={generate}>
+            <Sparkles size={15} /> {loading ? t("ai.generating") : t("ai.generate")}
+          </Button>
+        </div>
+        {error && <div className="form-error">{error}</div>}
+      </Card>
+
+      {summary ? (
+        <>
+          <div className="grid three-col">
+            <Card className="metric-card"><h2>{t("ai.weekly")}</h2><div className="metric-value">{summary.sourceStats.weekly.completedTasks}</div><p className="muted">{t("stats.completedCount", { count: summary.sourceStats.weekly.completedTasks })}</p></Card>
+            <Card className="metric-card"><h2>{t("period.monthly")}</h2><div className="metric-value">{summary.sourceStats.monthly.completionRate}%</div><p className="muted">{t("stats.completion")}</p></Card>
+            <Card className="metric-card"><h2>{t("ai.historical")}</h2><div className="metric-value">{summary.sourceStats.historical.totalTasks}</div><p className="muted">{t("stats.totalTasks")}</p></Card>
+          </div>
+          <div className="grid ai-card-grid">
+            {(["accomplishments", "workStyle", "recommendations", "risks", "evidence"] as const).map((key) => (
+              <Card className="stack ai-card" key={key}>
+                <div className="row-between">
+                  <h2>{summary.sections[key].title}</h2>
+                  {key === "workStyle" && <Badge>{summary.target.name}</Badge>}
+                </div>
+                <ul>
+                  {summary.sections[key].items.map((item) => <li key={item}>{item}</li>)}
+                  {!summary.sections[key].items.length && <li>{t("ai.noInsight")}</li>}
+                </ul>
+              </Card>
+            ))}
+          </div>
+        </>
+      ) : (
+        <EmptyState title={t("ai.emptyTitle")} text={t("ai.emptyText")} actionLabel={disabled ? undefined : t("ai.generate")} onAction={generate} />
+      )}
     </div>
   );
 }
@@ -1206,6 +1340,8 @@ function useMiraApi() {
     },
     updateNote: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) => mutate(() => request(`/me/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteNote: (id: string) => mutate(() => request(`/me/notes/${id}`, { method: "DELETE" })),
+    generateAiSummary: (payload: { mode: ViewMode; targetNodeId?: string; targetScope?: "person" | "subtree"; language: "en" | "zh" }) =>
+      request<AiSummaryResult>("/me/ai-summary", { method: "POST", body: JSON.stringify(payload) }),
     createTeamNode: (payload: { name: string; title?: string; parentId?: string }) => mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
     updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteTeamNode: (id: string) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),

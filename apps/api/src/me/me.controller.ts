@@ -6,6 +6,7 @@ import { Period } from "../common/period";
 import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
+import { AiSummaryDto } from "./dto/ai-summary.dto";
 import { MeService } from "./me.service";
 
 @UseGuards(JwtAuthGuard)
@@ -37,6 +38,11 @@ export class MeController {
   @Patch("password")
   updatePassword(@CurrentUser() user: AuthUser, @Body() payload: UpdatePasswordDto) {
     return this.me.updatePassword(user, payload);
+  }
+
+  @Post("ai-summary")
+  aiSummary(@CurrentUser() user: AuthUser, @Body() payload: AiSummaryDto) {
+    return this.me.aiSummary(user, payload);
   }
 
   @Post("tasks")

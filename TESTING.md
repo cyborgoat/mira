@@ -37,6 +37,7 @@ Check these flows:
 - `#tasks`: add a task with priority and due date, filter it, edit it, complete it, search it, delete it.
 - `#notes`: create a tagged note, edit Markdown, save it, upload a `.md` or `.txt` file, delete a note.
 - `#stats`: switch daily, weekly, and monthly filters, export Markdown, and confirm records change as expected.
+- `#ai-summary`: configure `MIRA_AI_API_KEY`, generate a personal summary, switch to team view as `manager@mira.local`, and generate a person and subtree summary for managed nodes.
 - Refresh the page and confirm records persist from the API.
 
 ## Planned Tests
@@ -68,6 +69,7 @@ Manual API smoke test:
 
 - `POST /auth/login` with `manager@mira.local`, `alex@mira.local`, and `admin@mira.local`.
 - confirm `/me/work` returns only the signed-in user's own tasks and notes.
+- confirm `/me/ai-summary` fails without backend AI config, then returns scoped summaries when `MIRA_AI_API_KEY` is set.
 - confirm `/me/profile` updates name, email, and role text, and `/me/password` changes login credentials after current-password verification.
 - confirm `/me/team-view` returns subordinate data for `manager@mira.local` and is unavailable to users without children.
 - confirm `/team/nodes`, `/tasks`, and `/notes` raw management endpoints require superuser access.
