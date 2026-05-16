@@ -42,6 +42,7 @@ export class AiService {
 
   private async callOpenAiCompatible(provider: Provider, apiKey: string, prompt: string) {
     const baseUrl = this.configString("MIRA_AI_BASE_URL", this.defaultBaseUrl(provider)).replace(/\/+$/, "");
+    const responseFormat = provider === "openrouter" ? {} : { response_format: { type: "json_object" } };
     const response = await this.fetchJson(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -51,8 +52,9 @@ export class AiService {
       },
       body: JSON.stringify({
         model: this.model(provider),
+        max_tokens: 1600,
         temperature: 0.2,
-        response_format: { type: "json_object" },
+        ...responseFormat,
         messages: [
           { role: "system", content: this.systemPrompt() },
           { role: "user", content: prompt },
@@ -95,11 +97,16 @@ export class AiService {
     try {
       const response = await fetch(url, { ...init, signal: controller.signal });
       const body = await response.text();
-      if (!response.ok) throw new BadGatewayException(`AI provider request failed: ${response.status}`);
-      return JSON.parse(body);
+      if (!response.ok) throw new BadGatewayException(`AI provider request failed: ${response.status}${this.providerError(body)}`);
+      try {
+        return JSON.parse(body);
+      } catch {
+        throw new BadGatewayException(`AI provider returned non-JSON response${this.providerError(body)}`);
+      }
     } catch (error) {
       if (error instanceof BadGatewayException) throw error;
-      throw new BadGatewayException("AI provider request failed");
+      const message = error instanceof Error ? `: ${error.message}` : "";
+      throw new BadGatewayException(`AI provider request failed${message}`);
     } finally {
       clearTimeout(timeout);
     }
@@ -145,6 +152,19 @@ export class AiService {
 
   private configString(key: string, fallback: string) {
     return this.config.get<string>(key, fallback).trim() || fallback;
+  }
+
+  private providerError(body: string) {
+    const value = body.trim();
+    if (!value) return "";
+    try {
+      const parsed = JSON.parse(value) as { error?: { message?: unknown }; message?: unknown };
+      const message = parsed.error?.message || parsed.message;
+      if (typeof message === "string" && message.trim()) return `: ${message.trim().slice(0, 300)}`;
+    } catch {
+      // Fall through to a short text preview.
+    }
+    return `: ${value.replace(/\s+/g, " ").slice(0, 300)}`;
   }
 
   private systemPrompt() {
