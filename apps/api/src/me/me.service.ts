@@ -1,15 +1,23 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { Prisma, TaskPriority, TaskStatus } from "@prisma/client";
+import * as bcrypt from "bcryptjs";
 import { AuthUser } from "../auth/current-user";
 import { createId } from "../common/ids";
 import { periodStart, Period } from "../common/period";
 import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { PrismaService } from "../prisma/prisma.service";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
+import { UsersService } from "../users/users.service";
+import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
 
 @Injectable()
 export class MeService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly users: UsersService,
+    private readonly config: ConfigService,
+  ) {}
 
   async personalWork(user: AuthUser, filters: { period: Period; query?: string; status?: TaskStatus; priority?: TaskPriority }) {
     const ownerNodeId = this.requireOwnNode(user);
@@ -42,6 +50,42 @@ export class MeService {
       this.prisma.meetingNote.findMany({ where: { ownerNodeId: { in: descendantIds } }, orderBy: { updatedAt: "desc" } }),
     ]);
     return this.viewPayload(selectedNode, descendantIds, this.filterByPeriod(tasks, notes, period));
+  }
+
+  async updateProfile(user: AuthUser, payload: UpdateProfileDto) {
+    const data: Prisma.UserUpdateInput = {};
+    if (payload.email !== undefined) {
+      const email = payload.email.toLowerCase().trim();
+      const existing = await this.prisma.user.findUnique({ where: { email } });
+      if (existing && existing.id !== user.id) throw new ConflictException("Email is already in use");
+      data.email = email;
+    }
+    if (payload.role !== undefined) data.role = payload.role?.trim() || null;
+
+    if (Object.keys(data).length) await this.prisma.user.update({ where: { id: user.id }, data });
+    if (payload.name !== undefined) {
+      const name = payload.name.trim();
+      if (!name) throw new BadRequestException("Name is required");
+      const ownerNodeId = this.requireOwnNode(user);
+      await this.prisma.teamNode.update({ where: { id: ownerNodeId }, data: { name } });
+    }
+
+    const updated = await this.users.findById(user.id);
+    if (!updated) throw new NotFoundException("User not found");
+    return this.users.toPublicUser(updated);
+  }
+
+  async updatePassword(user: AuthUser, payload: UpdatePasswordDto) {
+    const current = await this.prisma.user.findUnique({ where: { id: user.id } });
+    if (!current) throw new NotFoundException("User not found");
+    const matches = await bcrypt.compare(payload.currentPassword, current.passwordHash);
+    if (!matches) throw new ForbiddenException("Current password is incorrect");
+    const rounds = this.config.get<number>("MIRA_BCRYPT_ROUNDS", 12);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await bcrypt.hash(payload.newPassword, rounds) },
+    });
+    return { ok: true };
   }
 
   async createTask(user: AuthUser, payload: Omit<CreateTaskDto, "ownerNodeId">) {

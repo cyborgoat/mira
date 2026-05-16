@@ -108,6 +108,25 @@ describe("Mira Nest API", () => {
     expect(managerLogin.body.user.isSuperuser).toBe(false);
     expect(managerLogin.body.user.canViewTeam).toBe(true);
 
+    const updatedProfile = await request(app.getHttpServer())
+      .patch("/me/profile")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ name: "Product Lead", email: "lead@example.com", role: "Delivery Owner" })
+      .expect(200);
+    expect(updatedProfile.body.email).toBe("lead@example.com");
+    expect(updatedProfile.body.role).toBe("Delivery Owner");
+    expect(updatedProfile.body.teamNode.name).toBe("Product Lead");
+
+    await request(app.getHttpServer())
+      .patch("/me/password")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ currentPassword: "password123", newPassword: "new-password-123" })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "lead@example.com", password: "new-password-123" })
+      .expect(201);
+
     const alexLogin = await request(app.getHttpServer())
       .post("/auth/login")
       .send({ email: "alex@mira.local", password: "password123" })

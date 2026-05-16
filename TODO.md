@@ -7,12 +7,13 @@ The active product direction is an API-backed user-centered workspace with NestJ
 - Dashboard: focused work content and stats without tree administration.
 - Personal mode: signed-in users only see and mutate their own tasks and notes.
 - Team view mode: users with children in the tree can inspect subordinate task stats and details in read-only mode.
-- Settings: superusers can create, edit, select, delete, export, import, and reset team/workspace data.
+- Settings: every user can edit account details and password; superusers can create, edit, select, delete, export, import, and reset team/workspace data.
 - Roles: arbitrary role/title text; authority comes from the tree and the separate superuser permission.
 
 ## P0 - New Features to be implemented
 
 - Personal Work Mode: Implemented through `/me/work` and `/me/tasks`/`/me/notes`.
+- Account Settings: Implemented through `/me/profile` and `/me/password`.
 - Team View Mode: Implemented through `/me/team-view`, aggregating subordinate tasks, meeting notes, and summary statistics.
 - Team Management Tree: Implemented as superuser-only Settings through `/team/nodes` and `/team/tree`.
 - Frontend API Integration: Implemented for login, dashboard, tasks, notes, stats, team view, and settings.

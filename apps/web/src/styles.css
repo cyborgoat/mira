@@ -280,6 +280,7 @@ p {
 }
 
 .field label,
+.field span,
 label strong {
   color: var(--mira-text);
   font-size: 13px;
@@ -361,6 +362,108 @@ label strong {
 .team-grid {
   grid-template-columns: 280px minmax(260px, 0.7fr) minmax(0, 1.2fr);
   align-items: start;
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: 188px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mira-muted);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.settings-tab:hover {
+  background: var(--mira-surface-2);
+  color: var(--mira-text);
+}
+
+.settings-tab.active {
+  background: var(--mira-accent-soft);
+  border-color: oklch(0.79 0.035 245);
+  color: var(--mira-accent-strong);
+  font-weight: 650;
+}
+
+.settings-content {
+  min-width: 0;
+}
+
+.settings-panel {
+  max-width: 760px;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panel-heading h2 {
+  margin-bottom: 3px;
+}
+
+.panel-heading p {
+  margin-bottom: 0;
+}
+
+.settings-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-form .field:first-child,
+.settings-form .field:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.settings-meta {
+  align-self: end;
+  border: 1px solid var(--mira-border);
+  border-radius: 8px;
+  background: var(--mira-surface-2);
+  min-height: 58px;
+  padding: 9px 10px;
+}
+
+.settings-meta span,
+.settings-meta strong {
+  display: block;
+}
+
+.settings-meta span {
+  color: var(--mira-muted);
+  font-size: 12px;
+}
+
+.settings-meta strong {
+  color: var(--mira-text);
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.form-inline-error {
+  color: var(--mira-danger);
+  font-size: 13px;
 }
 
 .team-tree {
@@ -894,8 +997,19 @@ label strong {
   .two-col,
   .three-col,
   .notes-grid,
-  .team-grid {
+  .team-grid,
+  .settings-layout {
     grid-template-columns: 1fr;
+  }
+
+  .settings-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .settings-tab {
+    flex: 0 0 auto;
   }
 
   .editor-panel {
@@ -936,8 +1050,14 @@ label strong {
   .summary-section,
   .summary-item,
   .editor-fields,
-  .filter-row {
+  .filter-row,
+  .settings-form {
     grid-template-columns: 1fr;
+  }
+
+  .settings-form .field:first-child,
+  .settings-form .field:nth-child(3) {
+    grid-column: auto;
   }
 
   .member-select {

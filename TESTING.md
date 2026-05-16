@@ -29,9 +29,9 @@ npm run dev:web
 
 Check these flows:
 
-- sign in as `alex@mira.local` and confirm the app stays in personal mode with no Settings tab.
+- sign in as `alex@mira.local` and confirm Settings only shows account and password tabs.
 - sign in as `manager@mira.local`, switch Personal/Team view, and confirm team view is read-only subordinate data.
-- sign in as `admin@mira.local` and confirm Settings exposes the team tree and JSON workspace tools.
+- sign in as `admin@mira.local` and confirm Settings adds the team tree tab and JSON workspace tools.
 - `#dashboard`: confirm stats and recent work change between personal and team view where available.
 - `#tasks`: add a task with priority and due date, filter it, edit it, complete it, search it, delete it.
 - `#notes`: create a tagged note, edit Markdown, save it, upload a `.md` or `.txt` file, delete a note.
@@ -67,6 +67,7 @@ Manual API smoke test:
 
 - `POST /auth/login` with `manager@mira.local`, `alex@mira.local`, and `admin@mira.local`.
 - confirm `/me/work` returns only the signed-in user's own tasks and notes.
+- confirm `/me/profile` updates name, email, and role text, and `/me/password` changes login credentials after current-password verification.
 - confirm `/me/team-view` returns subordinate data for `manager@mira.local` and is unavailable to users without children.
 - confirm `/team/nodes`, `/tasks`, and `/notes` raw management endpoints require superuser access.
 - create a root node and child node through `POST /team/nodes` as the superuser.

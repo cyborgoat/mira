@@ -4,6 +4,8 @@ import {
   Download,
   Edit3,
   FileText,
+  GitFork,
+  KeyRound,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -13,6 +15,7 @@ import {
   Settings,
   Trash2,
   Upload,
+  UserRound,
 } from "lucide-react";
 import React, { useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -31,6 +34,7 @@ type ViewMode = "personal" | "team";
 type TaskStatus = "open" | "complete";
 type TaskPriority = "low" | "normal" | "high" | "urgent";
 type Period = "daily" | "weekly" | "monthly";
+type SettingsTab = "account" | "security" | "team";
 
 type TeamNode = {
   id: string;
@@ -110,7 +114,6 @@ function App() {
   const visibleTasks = activeView?.tasks ?? [];
   const visibleNotes = activeView?.notes ?? [];
   const currentNav = nav.find((item) => item.key === route) ?? nav[0];
-  const visibleNav = nav.filter((item) => item.key !== "settings" || api.user?.canManageSettings);
 
   useEffect(() => {
     const handleHashChange = () => setRoute(resolveRouteFromHash());
@@ -133,6 +136,12 @@ function App() {
   };
 
   if (!api.user) return <LoginScreen onLogin={api.login} error={api.error} loading={api.loading} />;
+  const headerEyebrow = route === "settings" ? "Account settings" : viewMode === "team" ? "Read-only subordinate view" : api.user.role || "Personal workspace";
+  const headerCopy = route === "settings"
+    ? "Manage your account details and password."
+    : viewMode === "team"
+      ? "Subordinate stats and details for your team tree."
+      : "Your own work content and activity stats.";
 
   return (
     <div className="app-shell">
@@ -160,7 +169,7 @@ function App() {
 
       <aside className="sidebar">
         <div className="stack">
-          {visibleNav.map((item) => {
+          {nav.map((item) => {
             const Icon = item.icon;
             return (
               <Button
@@ -183,9 +192,9 @@ function App() {
         {api.error && <div className="form-error page-error">{api.error}</div>}
         <div className="page-header">
           <div>
-            <div className="eyebrow">{viewMode === "team" ? "Read-only subordinate view" : api.user.role || "Personal workspace"}</div>
+            <div className="eyebrow">{headerEyebrow}</div>
             <h1>{currentNav.label}</h1>
-            <p className="muted">{viewMode === "team" ? "Subordinate stats and details for your team tree." : "Your own work content and activity stats."}</p>
+            <p className="muted">{headerCopy}</p>
           </div>
           {(route === "dashboard" || route === "stats") && <PeriodControl value={period} onChange={setPeriod} />}
         </div>
@@ -212,10 +221,13 @@ function App() {
           />
         )}
         {route === "stats" && <StatsView view={activeView} period={period} />}
-        {route === "settings" && api.user.canManageSettings && (
+        {route === "settings" && (
           <SettingsView
+            user={api.user}
             nodes={api.teamNodes}
             teamView={api.teamView}
+            onUpdateProfile={api.updateProfile}
+            onUpdatePassword={api.updatePassword}
             onCreate={api.createTeamNode}
             onUpdate={api.updateTeamNode}
             onDelete={api.deleteTeamNode}
@@ -659,8 +671,11 @@ function AchievementsView({ tasks, notes }: { tasks: Task[]; notes: MeetingNote[
 }
 
 function SettingsView({
+  user,
   nodes,
   teamView,
+  onUpdateProfile,
+  onUpdatePassword,
   onCreate,
   onUpdate,
   onDelete,
@@ -668,8 +683,11 @@ function SettingsView({
   onImport,
   onReset,
 }: {
+  user: User;
   nodes: TeamNode[];
   teamView: WorkView | null;
+  onUpdateProfile: (payload: { name: string; email: string; role: string }) => Promise<void>;
+  onUpdatePassword: (payload: { currentPassword: string; newPassword: string }) => Promise<void>;
   onCreate: (payload: { name: string; title?: string; parentId?: string }) => Promise<void>;
   onUpdate: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -677,9 +695,19 @@ function SettingsView({
   onImport: (file: File | undefined) => Promise<void>;
   onReset: () => Promise<void>;
 }) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("account");
   const [draft, setDraft] = useState({ name: "", title: "", parentId: "root" });
   const [editingId, setEditingId] = useState("");
   const editingNode = nodes.find((node) => node.id === editingId);
+  const tabs: Array<{ key: SettingsTab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
+    { key: "account", label: "Account", icon: UserRound },
+    { key: "security", label: "Password", icon: KeyRound },
+    ...(user.canManageSettings ? [{ key: "team" as SettingsTab, label: "Team tree", icon: GitFork }] : []),
+  ];
+
+  useEffect(() => {
+    if (activeTab === "team" && !user.canManageSettings) setActiveTab("account");
+  }, [activeTab, user.canManageSettings]);
 
   const save = async () => {
     const name = draft.name.trim();
@@ -695,71 +723,179 @@ function SettingsView({
   };
 
   return (
-    <div className="grid team-grid">
-      <Card className="stack">
-        <div className="row-between">
-          <h2>Team tree</h2>
-          <Badge>{nodes.length} nodes</Badge>
-        </div>
-        <div className="team-tree">
-          {buildTreeRows(nodes).map(({ node, depth }) => (
-            <button
-              className={`team-node ${node.id === editingId ? "active" : ""}`}
-              key={node.id}
-              style={{ paddingLeft: 10 + depth * 18 }}
-              onClick={() => {
-                setEditingId(node.id);
-                setDraft({ name: node.name, title: node.title ?? "", parentId: node.parentId ?? "root" });
-              }}
-            >
-              <span>{node.name}</span>
-              <small>{node.title || "Untitled role"}</small>
+    <div className="settings-layout">
+      <nav className="settings-tabs" aria-label="Settings sections">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button className={`settings-tab ${activeTab === tab.key ? "active" : ""}`} type="button" key={tab.key} onClick={() => setActiveTab(tab.key)}>
+              <Icon size={16} />
+              <span>{tab.label}</span>
             </button>
-          ))}
-        </div>
-      </Card>
-      <Card className="stack">
-        <div className="row-between">
-          <h2>{editingNode ? "Edit node" : "Add node"}</h2>
-          {editingNode && <Badge>{editingNode.name}</Badge>}
-        </div>
-        <Input value={draft.name} placeholder="Name" onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
-        <Input value={draft.title} placeholder="Role or title, any text" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
-        <Select value={draft.parentId} onValueChange={(value) => setDraft({ ...draft, parentId: value })}>
-          <SelectTrigger><SelectValue placeholder="Parent node" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="root">Top level</SelectItem>
-            {nodes.filter((node) => node.id !== editingId).map((node) => (
-              <SelectItem value={node.id} key={node.id}>{nodePath(nodes, node)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="row-between">
-          <Button type="button" variant="secondary" onClick={() => { setEditingId(""); setDraft({ name: "", title: "", parentId: "root" }); }}>Clear</Button>
-          <Button type="button" disabled={!draft.name.trim()} onClick={save}>{editingNode ? <Save size={15} /> : <Plus size={15} />} {editingNode ? "Save" : "Add"}</Button>
-        </div>
-        {editingNode && (
-          <Button type="button" variant="ghost" onClick={() => confirmAction("Delete this team node?", () => onDelete(editingNode.id))}>
-            <Trash2 size={15} /> Delete selected node
-          </Button>
+          );
+        })}
+      </nav>
+
+      <div className="settings-content">
+        {activeTab === "account" && <AccountSettingsPanel user={user} onSubmit={onUpdateProfile} />}
+        {activeTab === "security" && <PasswordSettingsPanel onSubmit={onUpdatePassword} />}
+        {activeTab === "team" && user.canManageSettings && (
+          <div className="grid team-grid">
+            <Card className="stack">
+              <div className="row-between">
+                <h2>Team tree</h2>
+                <Badge>{nodes.length} nodes</Badge>
+              </div>
+              <div className="team-tree">
+                {buildTreeRows(nodes).map(({ node, depth }) => (
+                  <button
+                    className={`team-node ${node.id === editingId ? "active" : ""}`}
+                    key={node.id}
+                    style={{ paddingLeft: 10 + depth * 18 }}
+                    onClick={() => {
+                      setEditingId(node.id);
+                      setDraft({ name: node.name, title: node.title ?? "", parentId: node.parentId ?? "root" });
+                    }}
+                  >
+                    <span>{node.name}</span>
+                    <small>{node.title || "Untitled role"}</small>
+                  </button>
+                ))}
+              </div>
+            </Card>
+            <Card className="stack">
+              <div className="row-between">
+                <h2>{editingNode ? "Edit node" : "Add node"}</h2>
+                {editingNode && <Badge>{editingNode.name}</Badge>}
+              </div>
+              <Input value={draft.name} placeholder="Name" onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+              <Input value={draft.title} placeholder="Role or title, any text" onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+              <Select value={draft.parentId} onValueChange={(value) => setDraft({ ...draft, parentId: value })}>
+                <SelectTrigger><SelectValue placeholder="Parent node" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="root">Top level</SelectItem>
+                  {nodes.filter((node) => node.id !== editingId).map((node) => (
+                    <SelectItem value={node.id} key={node.id}>{nodePath(nodes, node)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="row-between">
+                <Button type="button" variant="secondary" onClick={() => { setEditingId(""); setDraft({ name: "", title: "", parentId: "root" }); }}>Clear</Button>
+                <Button type="button" disabled={!draft.name.trim()} onClick={save}>{editingNode ? <Save size={15} /> : <Plus size={15} />} {editingNode ? "Save" : "Add"}</Button>
+              </div>
+              {editingNode && (
+                <Button type="button" variant="ghost" onClick={() => confirmAction("Delete this team node?", () => onDelete(editingNode.id))}>
+                  <Trash2 size={15} /> Delete selected node
+                </Button>
+              )}
+            </Card>
+            <Card className="stack">
+              <h2>Workspace data</h2>
+              <p className="muted">JSON tools for test data and local resets.</p>
+              <div className="row tool-row">
+                <Button type="button" variant="secondary" onClick={onExport}><Download size={15} /> Export</Button>
+                <label className="upload-button tool-upload">
+                  <Upload size={15} /> Import
+                  <Input type="file" accept="application/json,.json" onChange={(event) => onImport(event.target.files?.[0])} />
+                </label>
+                <Button type="button" variant="ghost" onClick={() => confirmAction("Reset the workspace? This deletes all tasks, notes, and team nodes.", onReset)}>
+                  <Trash2 size={15} /> Reset
+                </Button>
+              </div>
+              <InlineStats stats={teamView ? buildStats(teamView.tasks, teamView.notes) : buildStats([], [])} />
+            </Card>
+          </div>
         )}
-      </Card>
-      <Card className="stack">
-        <h2>Workspace data</h2>
-        <p className="muted">Superuser-only JSON tools for testing and local reset.</p>
-        <div className="row tool-row">
-          <Button type="button" variant="secondary" onClick={onExport}><Download size={15} /> Export</Button>
-          <label className="upload-button tool-upload">
-            <Upload size={15} /> Import
-            <Input type="file" accept="application/json,.json" onChange={(event) => onImport(event.target.files?.[0])} />
-          </label>
-          <Button type="button" variant="ghost" onClick={() => confirmAction("Reset the workspace? This deletes all tasks, notes, and team nodes.", onReset)}>
-            <Trash2 size={15} /> Reset
-          </Button>
-        </div>
-        <InlineStats stats={teamView ? buildStats(teamView.tasks, teamView.notes) : buildStats([], [])} />
-      </Card>
+      </div>
     </div>
+  );
+}
+
+function AccountSettingsPanel({ user, onSubmit }: { user: User; onSubmit: (payload: { name: string; email: string; role: string }) => Promise<void> }) {
+  const [draft, setDraft] = useState({ name: user.teamNode?.name ?? "", email: user.email, role: user.role ?? "" });
+
+  useEffect(() => {
+    setDraft({ name: user.teamNode?.name ?? "", email: user.email, role: user.role ?? "" });
+  }, [user.email, user.role, user.teamNode?.name]);
+
+  return (
+    <Card className="stack settings-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Account</h2>
+          <p className="muted">These details identify your workspace profile.</p>
+        </div>
+        <Badge>{user.isSuperuser ? "Superuser" : "User"}</Badge>
+      </div>
+      <div className="settings-form">
+        <label className="field">
+          <span>Name</span>
+          <Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+        </label>
+        <label className="field">
+          <span>Email</span>
+          <Input type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} />
+        </label>
+        <label className="field">
+          <span>Role</span>
+          <Input value={draft.role} placeholder="Any title or role text" onChange={(event) => setDraft({ ...draft, role: event.target.value })} />
+        </label>
+        <div className="settings-meta">
+          <span>Tree node</span>
+          <strong>{user.teamNode?.title || "No title set"}</strong>
+        </div>
+      </div>
+      <div className="row-between">
+        <span className="muted">Role text does not grant permissions.</span>
+        <Button type="button" disabled={!draft.name.trim() || !draft.email.trim()} onClick={() => onSubmit({ name: draft.name, email: draft.email, role: draft.role })}>
+          <Save size={15} /> Save account
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function PasswordSettingsPanel({ onSubmit }: { onSubmit: (payload: { currentPassword: string; newPassword: string }) => Promise<void> }) {
+  const [draft, setDraft] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const mismatch = draft.newPassword && draft.confirmPassword && draft.newPassword !== draft.confirmPassword;
+  const canSave = draft.currentPassword.length > 0 && draft.newPassword.length >= 8 && draft.newPassword === draft.confirmPassword;
+
+  const save = async () => {
+    if (!canSave) return;
+    await onSubmit({ currentPassword: draft.currentPassword, newPassword: draft.newPassword });
+    setDraft({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  };
+
+  return (
+    <Card className="stack settings-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Password</h2>
+          <p className="muted">Use at least 8 characters.</p>
+        </div>
+        <Badge>Private</Badge>
+      </div>
+      <div className="settings-form">
+        <label className="field">
+          <span>Current password</span>
+          <Input type="password" value={draft.currentPassword} onChange={(event) => setDraft({ ...draft, currentPassword: event.target.value })} />
+        </label>
+        <label className="field">
+          <span>New password</span>
+          <Input type="password" value={draft.newPassword} onChange={(event) => setDraft({ ...draft, newPassword: event.target.value })} />
+        </label>
+        <label className="field">
+          <span>Confirm password</span>
+          <Input type="password" value={draft.confirmPassword} onChange={(event) => setDraft({ ...draft, confirmPassword: event.target.value })} />
+        </label>
+      </div>
+      <div className="row-between">
+        <span className={mismatch ? "form-inline-error" : "muted"}>{mismatch ? "Passwords do not match." : "Password changes apply to the next login."}</span>
+        <Button type="button" disabled={!canSave} onClick={save}>
+          <Save size={15} /> Update password
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -962,6 +1098,20 @@ function useMiraApi() {
     });
   };
 
+  const updateProfile = async (payload: { name: string; email: string; role: string }) => {
+    setLoading(true);
+    try {
+      setError("");
+      const updated = await request<User>("/me/profile", { method: "PATCH", body: JSON.stringify(payload) });
+      setUser(updated);
+      setRevision((current) => current + 1);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     user,
     teamNodes,
@@ -973,6 +1123,8 @@ function useMiraApi() {
     login,
     logout,
     loadWorkspace,
+    updateProfile,
+    updatePassword: (payload: { currentPassword: string; newPassword: string }) => mutate(() => request("/me/password", { method: "PATCH", body: JSON.stringify(payload) })),
     createTask: (payload: { title: string; details: string; priority: TaskPriority; dueDate?: string }) => mutate(() => request("/me/tasks", { method: "POST", body: JSON.stringify(payload) })),
     updateTask: (id: string, payload: { title?: string; details?: string; status?: TaskStatus; priority?: TaskPriority; dueDate?: string | null }) => mutate(() => request(`/me/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteTask: (id: string) => mutate(() => request(`/me/tasks/${id}`, { method: "DELETE" })),

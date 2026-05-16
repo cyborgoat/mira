@@ -8,11 +8,11 @@ The current app starts with seeded mock users and focuses on five tabs:
 - **Tasks**: create, edit, complete, delete, search, prioritize, and track due dates for the signed-in user's own node.
 - **Notes**: write Markdown notes, tag them, preview them, upload `.md`, `.markdown`, or `.txt` files, save edits, and delete notes for the signed-in user's own node.
 - **Stats**: summarize tasks and meeting notes by daily, weekly, or monthly periods and export Markdown.
-- **Settings**: superuser-only team tree and JSON workspace tools.
+- **Settings**: account details and password for every user, plus a superuser-only team tree tab and JSON workspace tools.
 
 Work records are persisted by the NestJS API. Browser `localStorage` stores only the API access token.
 
-Roles and titles are free-form text. Permissions are not derived from labels like member, manager, or superuser. A user can view subordinate data when their linked team node has children, and superuser access is a separate `isSuperuser` permission used for Settings.
+Roles and titles are free-form text. Permissions are not derived from labels like member, manager, or superuser. A user can view subordinate data when their linked team node has children, and superuser access is a separate `isSuperuser` permission used for team tree administration.
 
 ## Quickstart
 
@@ -87,7 +87,7 @@ apps/api/src/
 apps/api/prisma/schema.prisma
 ```
 
-The current backend slice exposes seeded auth, `/me/work` for personal data, `/me/team-view` for subordinate read-only data, superuser team tree CRUD, and superuser workspace import/export support.
+The current backend slice exposes seeded auth, `/me/work` for personal data, `/me/team-view` for subordinate read-only data, `/me/profile` and `/me/password` for account settings, superuser team tree CRUD, and superuser workspace import/export support.
 
 ## Product Notes
 
@@ -97,6 +97,6 @@ Mira is designed as a compact user-centered work journal:
 2. Save meeting notes in Markdown.
 3. Review personal stats without team administration noise.
 4. Inspect subordinate work in team view when the user has children in the tree.
-5. Keep team tree administration isolated in superuser Settings.
+5. Keep team tree administration isolated in a superuser Settings tab.
 
 The current scope is the first API-backed personal/team-view mode. Local-only storage has been replaced for active task and note workflows.

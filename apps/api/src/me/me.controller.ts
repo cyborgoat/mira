@@ -5,6 +5,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Period } from "../common/period";
 import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
+import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
 import { MeService } from "./me.service";
 
 @UseGuards(JwtAuthGuard)
@@ -26,6 +27,16 @@ export class MeController {
   @Get("team-view")
   teamView(@CurrentUser() user: AuthUser, @Query("period") period: Period = "weekly", @Query("nodeId") nodeId?: string) {
     return this.me.teamView(user, period, nodeId);
+  }
+
+  @Patch("profile")
+  updateProfile(@CurrentUser() user: AuthUser, @Body() payload: UpdateProfileDto) {
+    return this.me.updateProfile(user, payload);
+  }
+
+  @Patch("password")
+  updatePassword(@CurrentUser() user: AuthUser, @Body() payload: UpdatePasswordDto) {
+    return this.me.updatePassword(user, payload);
   }
 
   @Post("tasks")
