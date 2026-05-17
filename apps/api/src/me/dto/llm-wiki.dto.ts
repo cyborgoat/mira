@@ -1,4 +1,4 @@
-import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
 export type LlmWikiViewMode = "personal" | "team";
 export type LlmWikiScope = "personal" | "team";
@@ -41,32 +41,6 @@ export class GenerateLlmWikiDto {
 
   @IsIn(["en", "zh"])
   language!: "en" | "zh";
-}
-
-export class QueryLlmWikiDto {
-  @IsString()
-  @MinLength(1)
-  @MaxLength(4000)
-  question!: string;
-
-  @IsIn(["en", "zh"])
-  language!: "en" | "zh";
-
-  @IsOptional()
-  @IsBoolean()
-  saveAsPage?: boolean;
-
-  @IsOptional()
-  @IsIn(["personal", "team"])
-  view?: LlmWikiViewMode;
-
-  @IsOptional()
-  @IsIn(["personal", "team"])
-  scope?: LlmWikiScope;
-
-  @IsOptional()
-  @IsString()
-  ownerId?: string;
 }
 
 export class LintLlmWikiDto {

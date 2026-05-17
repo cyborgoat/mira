@@ -333,26 +333,24 @@ describe("Mira Nest API", () => {
           message: {
             content: JSON.stringify({
               answer: "The wiki says the roadmap source is persistent.",
-              files: [
-                { path: "index.md", content: "# Index\n\n- [[Roadmap]]: Persistent wiki source.\n- [[Roadmap Answer]]: Saved answer." },
-                { path: "pages/roadmap-answer.md", content: "# Roadmap Answer\n\nThe roadmap source is persistent." },
-              ],
-              logEntry: "query | roadmap persistence",
+              usedSourceIds: [],
             }),
           },
         }],
       }),
     } as Response);
 
-    const wikiAnswer = await request(app.getHttpServer())
-      .post("/me/llm-wiki/query")
+    const askAnswer = await request(app.getHttpServer())
+      .post("/me/ask-mira")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ question: "What does the roadmap source say?", language: "en", saveAsPage: true })
+      .send({ question: "What does the roadmap source say?", language: "en", scope: "personal" })
       .expect(201);
-    expect(wikiAnswer.body.answer).toContain("persistent");
-    expect(wikiAnswer.body.savedPage).toBe("pages/roadmap-answer.md");
+    expect(askAnswer.body.answer).toContain("persistent");
+    expect(Array.isArray(askAnswer.body.sources)).toBe(true);
+    expect(askAnswer.body.sources.length).toBeGreaterThan(0);
     aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(aiBody.messages[1].content).toContain("# Roadmap");
+    expect(aiBody.messages[1].content).toContain("Sources:");
+    expect(aiBody.messages[1].content).toContain("Roadmap");
 
     const editedPage = await request(app.getHttpServer())
       .patch("/me/llm-wiki/pages")

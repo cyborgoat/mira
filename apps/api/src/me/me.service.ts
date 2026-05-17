@@ -12,10 +12,41 @@ import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { UsersService } from "../users/users.service";
 import { WorkspaceContentService } from "../workspace-content/workspace-content.service";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
-import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, LlmWikiScope, LlmWikiViewMode, QueryLlmWikiDto, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
+import { AskMiraDto, AskMiraResult, type AskMiraSourceType } from "./dto/ask-mira.dto";
+import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, LlmWikiScope, LlmWikiViewMode, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
+
+type AskIndexRow = {
+  sourceId: string;
+  sourceType: string;
+  title: string;
+  ownerId: string;
+  ownerName: string;
+  path: string | null;
+  content: string;
+  updatedAt: string;
+};
+
+type AskIndexDocument = {
+  sourceId: string;
+  sourceType: string;
+  title: string;
+  ownerId: string;
+  ownerName: string;
+  path?: string;
+  content: string;
+  updatedAt: string;
+};
 
 @Injectable()
 export class MeService {
+  private askIndexEnsured = false;
+
+  private readonly askIndexPageLimit = 16;
+  private readonly askIndexTaskLimit = 80;
+  private readonly askIndexNoteLimit = 60;
+  private readonly askIndexResults = 12;
+  private readonly askIndexSourceLength = 1800;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly users: UsersService,
@@ -170,9 +201,50 @@ export class MeService {
     };
   }
 
-  async queryLlmWiki(user: AuthUser, payload: QueryLlmWikiDto) {
-    const target = await this.resolveWikiTarget(user, payload);
-    return this.ai.queryWiki(target.vaultId, { ...payload, saveAsPage: target.canEdit && payload.saveAsPage });
+  async askMira(user: AuthUser, payload: AskMiraDto): Promise<AskMiraResult> {
+    const scope = payload.scope === "team" ? "team" : "personal";
+    const targetUsers = await this.resolveAskUsers(user, scope, payload.ownerId);
+    const scopeKey = this.askScopeKey(user.id, scope, payload.ownerId);
+    await this.ensureAskIndexTable();
+    await this.buildAskIndex(scopeKey, targetUsers);
+
+    const question = payload.question.trim();
+    const queryTerms = this.tokenize(question);
+    const hits = await this.searchAskIndex(scopeKey, question);
+    if (!hits.length) {
+      return {
+        answer: "I could not find matching workspace content for this question.",
+        sources: [],
+      };
+    }
+
+    const responseTerms = queryTerms.length ? queryTerms : this.tokenize(question);
+    const topSources = hits.map((item) => ({
+      id: item.sourceId,
+      type: item.sourceType as AskMiraSourceType,
+      title: item.title,
+      snippet: this.sourceSnippet(item.content, queryTerms),
+    }));
+    const response = await this.ai.askFromSources(payload.language, question, topSources);
+    const usedIds = new Set(response.usedSourceIds);
+    const returnedSources = hits
+      .filter((item) => !usedIds.size || usedIds.has(item.sourceId))
+      .slice(0, this.askIndexResults)
+      .map((item) => ({
+        id: item.sourceId,
+        title: item.title,
+        type: item.sourceType as AskMiraSourceType,
+        snippet: this.sourceSnippet(item.content, responseTerms),
+        ownerId: item.ownerId,
+        ownerName: item.ownerName,
+        path: item.path || undefined,
+        content: item.content,
+      }));
+
+    return {
+      answer: response.answer,
+      sources: returnedSources,
+    };
   }
 
   lintLlmWiki(user: AuthUser, payload: LintLlmWikiDto) {
@@ -190,6 +262,296 @@ export class MeService {
 
   deleteLlmWikiPage(user: AuthUser, pagePath: string, view?: LlmWikiViewMode) {
     return this.ai.deleteWikiPage(this.editableWikiVaultId(user, view), pagePath);
+  }
+
+  private async buildAskIndex(scopeKey: string, targetUsers: Array<Prisma.UserGetPayload<{ include: { teamNode: true } }>>) {
+    const documents: AskIndexDocument[] = [];
+    for (const owner of targetUsers) {
+      const ownerId = owner.id;
+      const ownerName = owner.teamNode?.name || owner.email;
+      const ownerNodeId = owner.teamNodeId;
+      documents.push({
+        sourceId: `team-member:${ownerId}`,
+        sourceType: "team-member",
+        title: `${ownerName} profile`,
+        ownerId,
+        ownerName,
+        content: `Owner: ${ownerName}\nEmail: ${owner.email}\nRole: ${owner.teamNode?.title || owner.role || "No role"}\nTeam node: ${owner.teamNode?.name || "Unknown"}\nNode title: ${owner.teamNode?.title || "Untitled"}`,
+        updatedAt: new Date().toISOString(),
+      });
+
+      if (!ownerNodeId) continue;
+
+      const [overview, tasks, notes] = await Promise.all([
+        this.ai.wikiOverview(ownerId),
+        this.content.listTasks({ nodeIds: [ownerNodeId] }),
+        this.content.listNotes({ nodeIds: [ownerNodeId] }),
+      ]);
+
+      documents.push({
+        sourceId: `wiki-index:${ownerId}`,
+        sourceType: "wiki-index",
+        title: `Wiki index for ${ownerName}`,
+        ownerId,
+        ownerName,
+        path: "index.md",
+        content: overview.index || `No wiki index for ${ownerName}.`,
+        updatedAt: new Date().toISOString(),
+      });
+
+      for (const page of overview.pages.slice(0, this.askIndexPageLimit)) {
+        try {
+          const pageContent = await this.ai.readWikiPage(ownerId, page.path);
+          documents.push({
+            sourceId: `wiki-page:${ownerId}:${page.path}`,
+            sourceType: "wiki-page",
+            title: `${ownerName} wiki page ${page.path}`,
+            ownerId,
+            ownerName,
+            path: page.path,
+            content: `# ${page.title}\n${pageContent.content}`,
+            updatedAt: new Date().toISOString(),
+          });
+        } catch {
+          // Ignore unavailable page snapshots while indexing.
+        }
+      }
+
+      for (const task of tasks.slice(0, this.askIndexTaskLimit)) {
+        const item = task as { id: string; title: string; details: string; status: string; priority: string; dueDate: string | null; updatedAt: string };
+        documents.push({
+          sourceId: `task:${ownerId}:${item.id}`,
+          sourceType: "task",
+          title: `${ownerName} task: ${item.title}`,
+          ownerId,
+          ownerName,
+          content: [
+            `Task: ${item.title}`,
+            `Status: ${item.status}`,
+            `Priority: ${item.priority}`,
+            item.dueDate ? `Due date: ${item.dueDate.slice(0, 10)}` : "",
+            `Updated: ${item.updatedAt}`,
+            item.details ? `Details: ${item.details}` : "",
+          ].filter(Boolean).join("\n"),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+
+      for (const note of notes.slice(0, this.askIndexNoteLimit)) {
+        const item = note as { id: string; title: string; date: string; tags: string; content: string };
+        documents.push({
+          sourceId: `note:${ownerId}:${item.id}`,
+          sourceType: "note",
+          title: `${ownerName} note: ${item.title}`,
+          ownerId,
+          ownerName,
+          content: [
+            `Note: ${item.title}`,
+            `Date: ${item.date?.slice?.(0, 10) ?? item.date}`,
+            item.tags ? `Tags: ${item.tags}` : "",
+            "",
+            item.content,
+          ].filter(Boolean).join("\n"),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    const sanitized = documents
+      .map((document) => ({
+        ...document,
+        content: document.content.trim(),
+      }))
+      .filter((document) => document.content.trim());
+    const chunks = sanitized.slice(0, 420);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe("DELETE FROM mira_ask_index WHERE scope_key = ?", scopeKey);
+      for (const doc of chunks) {
+        await tx.$executeRawUnsafe(
+          `
+            INSERT INTO mira_ask_index
+            (scope_key, source_id, source_type, title, owner_id, owner_name, path, content, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `,
+          scopeKey,
+          doc.sourceId,
+          doc.sourceType,
+          doc.title,
+          doc.ownerId,
+          doc.ownerName,
+          doc.path || "",
+          doc.content.slice(0, this.askIndexSourceLength),
+          doc.updatedAt,
+        );
+      }
+    });
+  }
+
+  private async resolveAskUsers(user: AuthUser, scope: "personal" | "team", ownerId?: string) {
+    const ownerNodeId = this.requireOwnNode(user);
+    if (scope === "personal") {
+      const owner = await this.prisma.user.findUnique({
+        where: { id: user.id },
+        include: { teamNode: true },
+      });
+      if (!owner) throw new NotFoundException("User not found");
+      return [owner];
+    }
+
+    const allowedNodeIds = user.isSuperuser ? await this.activeNodeIds() : [ownerNodeId, ...(await this.descendantIds(ownerNodeId))];
+    if (allowedNodeIds.length <= 1 && !user.isSuperuser) {
+      throw new ForbiddenException("No subordinate team view is available");
+    }
+
+    if (ownerId && ownerId !== "team") {
+      const selected = await this.prisma.user.findUnique({ where: { id: ownerId }, include: { teamNode: true } });
+      if (!selected?.teamNodeId || !allowedNodeIds.includes(selected.teamNodeId)) {
+        throw new ForbiddenException("Selected user is outside your team view");
+      }
+      return [selected];
+    }
+
+    return this.prisma.user.findMany({
+      where: { teamNodeId: { in: allowedNodeIds } },
+      include: { teamNode: true },
+      orderBy: {
+        teamNode: {
+          sortOrder: "asc",
+        },
+      },
+    });
+  }
+
+  private askScopeKey(userId: string, scope: "personal" | "team", ownerId?: string) {
+    if (scope === "personal") return `ask:${userId}:personal`;
+    if (!ownerId || ownerId === "team") return `ask:${userId}:team`;
+    return `ask:${userId}:team:${ownerId}`;
+  }
+
+  private async ensureAskIndexTable() {
+    if (this.askIndexEnsured) return;
+    await this.prisma.$executeRawUnsafe(
+      `
+        CREATE TABLE IF NOT EXISTS mira_ask_index (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          scope_key TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          source_type TEXT NOT NULL,
+          title TEXT NOT NULL,
+          owner_id TEXT NOT NULL,
+          owner_name TEXT NOT NULL,
+          path TEXT DEFAULT '',
+          content TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE(scope_key, source_id)
+        )
+      `,
+    );
+    await this.prisma.$executeRawUnsafe(`
+      CREATE INDEX IF NOT EXISTS mira_ask_index_scope_key_idx ON mira_ask_index(scope_key)
+    `);
+    this.askIndexEnsured = true;
+  }
+
+  private async searchAskIndex(scopeKey: string, question: string): Promise<AskIndexRow[]> {
+    const rows = await this.prisma.$queryRawUnsafe<AskIndexRow[]>(
+      `
+        SELECT
+          source_id AS sourceId,
+          source_type AS sourceType,
+          title,
+          owner_id AS ownerId,
+          owner_name AS ownerName,
+          path,
+          content,
+          updated_at AS updatedAt
+        FROM mira_ask_index
+        WHERE scope_key = ?
+        ORDER BY updated_at DESC
+      `,
+      scopeKey,
+    );
+    if (!rows.length) return [];
+
+    const terms = this.tokenize(question);
+    const scored = rows
+      .map((row) => {
+        const score = this.scoreDocument(row, terms);
+        return { ...row, score };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 200);
+
+    const topScored = scored
+      .filter((row) => row.score > 0)
+      .map((row) => ({ ...row }));
+
+    if (topScored.length) {
+      return topScored.map((item) => ({
+        sourceId: item.sourceId,
+        sourceType: item.sourceType,
+        title: item.title,
+        ownerId: item.ownerId,
+        ownerName: item.ownerName,
+        path: item.path,
+        content: item.content,
+        updatedAt: item.updatedAt,
+      }));
+    }
+
+    return scored.slice(0, this.askIndexResults).map((row) => ({
+      sourceId: row.sourceId,
+      sourceType: row.sourceType,
+      title: row.title,
+      ownerId: row.ownerId,
+      ownerName: row.ownerName,
+      path: row.path,
+      content: row.content,
+      updatedAt: row.updatedAt,
+    }));
+  }
+
+  private scoreDocument(row: AskIndexRow, terms: string[]) {
+    if (!terms.length) return 0;
+    const lowerContent = row.content.toLowerCase();
+    const lowerTitle = row.title.toLowerCase();
+    let score = 0;
+    for (const term of terms) {
+      if (!term) continue;
+      if (lowerTitle.includes(term)) score += 10;
+      score += this.countMatches(lowerContent, term);
+    }
+    return score / (1 + row.content.length / 2500);
+  }
+
+  private sourceSnippet(content: string, terms: string[]) {
+    if (!content) return "";
+    const lower = content.toLowerCase();
+    const firstTerm = terms.find((term) => lower.includes(term.toLowerCase()));
+    const raw = content.trim();
+    if (!firstTerm || !raw) return raw.slice(0, 260);
+    const start = Math.max(0, lower.indexOf(firstTerm.toLowerCase()) - 120);
+    const end = Math.min(raw.length, start + 500);
+    return `${start > 0 ? "…" : ""}${raw.slice(start, end)}${end < raw.length ? "…" : ""}`;
+  }
+
+  private countMatches(value: string, term: string) {
+    if (!term) return 0;
+    let total = 0;
+    let cursor = 0;
+    while (true) {
+      const index = value.indexOf(term, cursor);
+      if (index < 0) break;
+      total += 1;
+      cursor = index + term.length;
+    }
+    return total;
+  }
+
+  private tokenize(value: string) {
+    const terms = value.toLowerCase().match(/[a-z0-9\u4e00-\u9fff]{2,}/g) ?? [];
+    return [...new Set(terms)];
   }
 
   async createTask(user: AuthUser, payload: Omit<CreateTaskDto, "ownerNodeId">) {

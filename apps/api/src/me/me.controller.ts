@@ -5,8 +5,9 @@ import { Period } from "../common/period";
 import { TaskPriority, TaskStatus } from "../common/workspace-types";
 import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
+import { AskMiraDto } from "./dto/ask-mira.dto";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
-import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, LlmWikiScope, LlmWikiViewMode, QueryLlmWikiDto, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
+import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, LlmWikiScope, LlmWikiViewMode, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
 import { MeService } from "./me.service";
 
 @UseGuards(JwtAuthGuard)
@@ -80,14 +81,14 @@ export class MeController {
     return this.me.generateLlmWiki(user, payload);
   }
 
-  @Post("llm-wiki/query")
-  queryLlmWiki(@CurrentUser() user: AuthUser, @Body() payload: QueryLlmWikiDto) {
-    return this.me.queryLlmWiki(user, payload);
-  }
-
   @Post("llm-wiki/lint")
   lintLlmWiki(@CurrentUser() user: AuthUser, @Body() payload: LintLlmWikiDto) {
     return this.me.lintLlmWiki(user, payload);
+  }
+
+  @Post("ask-mira")
+  askMira(@CurrentUser() user: AuthUser, @Body() payload: AskMiraDto) {
+    return this.me.askMira(user, payload);
   }
 
   @Get("llm-wiki/pages")

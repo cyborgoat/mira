@@ -33,13 +33,6 @@ export type LlmWikiOverview = {
   referenceStats?: LlmWikiReferenceStats;
 };
 
-export type LlmWikiQueryResult = {
-  answer: string;
-  savedPage?: string;
-  writtenPages: string[];
-  logEntry?: string;
-};
-
 export type LlmWikiIngestResult = {
   sourcePath: string;
   summary: string;
@@ -52,6 +45,18 @@ export type LlmWikiLintResult = {
   findings: string[];
   notes: string;
   logEntry?: string;
+};
+
+export type AskMiraSourceSummary = {
+  id: string;
+  type: string;
+  title: string;
+  snippet: string;
+};
+
+export type AskMiraContextResult = {
+  answer: string;
+  usedSourceIds: string[];
 };
 
 export type LlmWikiOwner = {
@@ -184,35 +189,38 @@ export class AiService {
     };
   }
 
-  async queryWiki(userId: string, payload: { question: string; language: LlmWikiLanguage; saveAsPage?: boolean }): Promise<LlmWikiQueryResult> {
-    const question = payload.question.trim();
-    if (!question) throw new BadRequestException("Question is required");
-
-    const vault = await this.ensureVault(userId);
-    const context = await this.wikiContext(vault.wikiDir, true);
+  async askFromSources(
+    language: LlmWikiLanguage,
+    question: string,
+    sources: AskMiraSourceSummary[],
+  ): Promise<AskMiraContextResult> {
+    if (!question.trim()) throw new BadRequestException("Question is required");
+    if (!Array.isArray(sources) || sources.length === 0) {
+      return {
+        answer: "I could not find any matching sources for this question.",
+        usedSourceIds: [],
+      };
+    }
+    const renderedSources = sources.map((source) => `- [${source.id}] ${source.type} | ${source.title}\n${source.snippet}`);
     const parsed = await this.completeJson(this.wikiJsonSystem(), [
-      this.languageLine(payload.language),
-      "Answer the user's question from the existing markdown wiki. Cite relevant wiki page names or source names in prose.",
-      payload.saveAsPage
-        ? "Also save the answer as a durable wiki page and update index.md."
-        : "Do not write files unless the answer must update index.md for correctness.",
-      "Return JSON with this shape: {\"answer\":\"markdown\",\"files\":[{\"path\":\"index.md or pages/name.md\",\"content\":\"markdown\"}],\"logEntry\":\"string\"}.",
-      "If saving an answer page, put it under pages/ with a concise kebab-case filename.",
+      this.languageLine(language),
+      "Answer the user's question from the provided sources only.",
+      "Cite relevant source IDs in markdown, using a format like [id].",
+      "Return JSON with this exact shape: {\"answer\":\"string\",\"usedSourceIds\":[\"id1\",\"id2\"]}.",
+      "Only include source IDs you actually used.",
       "",
-      "Wiki context:",
-      context,
+      "Sources:",
+      ...renderedSources,
       "",
-      `Question: ${question}`,
+      `Question: ${question.trim()}`,
     ].join("\n"));
 
-    const writtenPages = payload.saveAsPage ? await this.applyWikiFiles(vault.wikiDir, parsed.files) : [];
-    const logEntry = this.optionalString(parsed.logEntry) || `query | ${question.slice(0, 120)}`;
-    await this.appendLog(vault.wikiDir, logEntry);
+    const usedSourceIds = Array.isArray(parsed.usedSourceIds)
+      ? parsed.usedSourceIds.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+      : [];
     return {
       answer: this.optionalString(parsed.answer) || "No answer returned.",
-      savedPage: writtenPages.find((path) => path.startsWith("pages/")),
-      writtenPages,
-      logEntry,
+      usedSourceIds,
     };
   }
 

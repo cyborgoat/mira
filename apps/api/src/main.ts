@@ -1,34 +1,7 @@
-import { ValidationPipe } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { NestFactory } from "@nestjs/core";
-import { AppModule } from "./app.module";
+import { createApplication } from "./bootstrap/app";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const config = app.get(ConfigService);
-  const configuredOrigins = config
-    .get<string>("MIRA_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean);
-
-  app.enableCors({
-    origin: (origin, callback) => {
-      if (!origin || configuredOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(new Error(`CORS origin not allowed: ${origin}`));
-    },
-    credentials: true,
-  });
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
+  const { app, config } = await createApplication();
 
   await app.listen(config.get<number>("PORT", 8000));
 }
