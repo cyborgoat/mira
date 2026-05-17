@@ -1,55 +1,15 @@
 # Mira TODO
 
-The active product direction is an API-backed user-centered workspace with NestJS for personal work records, subordinate team view, and superuser-only settings.
+Only unfinished work should live here. Completed implementation details belong in `README.md`, `quickstart.md`, or release notes.
 
-## Current Scope
+## Product
 
-- Dashboard: focused work content and stats without tree administration.
-- Personal mode: signed-in users only see and mutate their own tasks and notes.
-- Team view mode: users with children in the tree can inspect subordinate task stats and details in read-only mode.
-- Settings: every user can edit account details and password; superusers can create, edit, select, delete, export, import, and reset team/workspace data.
-- i18n: English and Chinese UI strings are implemented with `react-i18next`.
-- Roles: arbitrary role/title text; authority comes from the tree and the separate superuser permission.
+- Improve Ask Mira retrieval ranking and source-card quality.
+- Add richer Markdown support without unsafe HTML rendering.
+- Add responsive QA for desktop, tablet, and mobile layouts.
 
-## P0 - New Features to be implemented
+## Testing
 
-- Personal Work Mode: Implemented through `/me/work` and `/me/tasks`/`/me/notes`.
-- Account Settings: Implemented through `/me/profile` and `/me/password`.
-- Team View Mode: Implemented through `/me/team-view`, aggregating subordinate tasks, meeting notes, and summary statistics.
-- Team Management Tree: Implemented as superuser-only Settings through `/team/nodes` and `/team/tree`.
-- Frontend API Integration: Implemented for login, dashboard, tasks, notes, stats, team view, and settings.
-- AI Summarizer: Implemented through `/me/ai-summary` with backend-only provider configuration and personal/team scopes.
-
-## P1 - Stabilize Local App
-
-- Confirmation before deleting tasks, notes, team nodes, and before resetting the workspace.
-- Import error states for unsupported or unreadable note uploads and workspace JSON imports.
-- Empty-state actions for starting the first task or note.
-- Keyboard shortcuts for save and new record in task and note editors.
-- Workspace data export/import as JSON.
-- Reset workspace control with confirmation.
-
-## P2 - Product Depth
-
-- Task due dates and priority filters.
-- Meeting-note tags.
-- Richer Markdown support without unsafe HTML rendering.
-- Summary export to Markdown.
-- Achievement detail views with the source records that contributed to each metric.
-- AI summary prompt tuning and saved summary history.
-- Add responsive QA for desktop, tablet, and mobile.
-
-## P3 - Quality
-
-- Add frontend component tests for tasks, notes, summary filters, and achievements.
-- Add accessibility checks for keyboard navigation and form labels.
-- Add Playwright smoke tests for dashboard, tasks, notes, stats, and settings.
-
-## Replaced Legacy Work
-
-The old FastAPI backend has been replaced by the NestJS service in `apps/api`. These areas still need product decisions before they are rebuilt on the new backend:
-
-- Backend API state management.
-- Workspace isolation.
-- Knowledge base, tag schema, and team portrait features.
-- Backend-driven i18n.
+- Add frontend component tests for tasks, notes, stats summaries, and achievements.
+- Add accessibility checks for keyboard navigation, forms, and chat/source interactions.
+- Add Playwright smoke tests for stats, tasks, notes, LLM Wiki, Ask Mira, and settings.
