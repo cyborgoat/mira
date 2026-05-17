@@ -12,7 +12,7 @@ import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { UsersService } from "../users/users.service";
 import { WorkspaceContentService } from "../workspace-content/workspace-content.service";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
-import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, QueryLlmWikiDto, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
+import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, LlmWikiScope, LlmWikiViewMode, QueryLlmWikiDto, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
 
 @Injectable()
 export class MeService {
@@ -88,10 +88,10 @@ export class MeService {
     return { ok: true };
   }
 
-  async llmWikiOverview(user: AuthUser, ownerId?: string) {
-    const target = await this.resolveWikiOwner(user, ownerId);
-    const overview = await this.ai.wikiOverview(target.owner.id);
-    const referenceStats = await this.referenceStats(target.owner.teamNodeId ? [target.owner.teamNodeId] : [], overview.pages.length, overview.sources.length);
+  async llmWikiOverview(user: AuthUser, options: { ownerId?: string; view?: LlmWikiViewMode; scope?: LlmWikiScope }) {
+    const target = await this.resolveWikiTarget(user, options);
+    const overview = await this.ai.wikiOverview(target.vaultId);
+    const referenceStats = await this.referenceStats(target.nodeIds, overview.pages.length, overview.sources.length);
     return {
       ...overview,
       owner: target.publicOwner,
@@ -113,26 +113,26 @@ export class MeService {
   }
 
   uploadLlmWikiSource(user: AuthUser, payload: UploadLlmWikiSourceDto) {
-    return this.ai.uploadWikiSource(user.id, payload);
+    return this.ai.uploadWikiSource(this.editableWikiVaultId(user, payload.view), payload);
   }
 
   ingestLlmWikiSource(user: AuthUser, payload: IngestLlmWikiSourceDto) {
-    return this.ai.ingestWikiSource(user.id, payload);
+    return this.ai.ingestWikiSource(this.editableWikiVaultId(user, payload.view), payload);
   }
 
   async llmWikiReferenceStats(
     user: AuthUser,
     period: GenerateLlmWikiDto["period"],
     scope: NonNullable<GenerateLlmWikiDto["scope"]>,
+    ownerId?: string,
   ) {
     if (!["daily", "weekly", "monthly", "historical"].includes(period)) throw new BadRequestException("Invalid wiki period");
     if (!["personal", "team"].includes(scope)) throw new BadRequestException("Invalid wiki scope");
-    const ownerNodeId = this.requireOwnNode(user);
-    const nodeIds = scope === "team" ? [ownerNodeId, ...(await this.descendantIds(ownerNodeId))] : [ownerNodeId];
+    const target = await this.resolveWikiTarget(user, { view: scope === "team" ? "team" : "personal", scope, ownerId });
     const [overview, tasks, notes] = await Promise.all([
-      this.ai.wikiOverview(user.id),
-      this.content.listTasks({ nodeIds }),
-      this.content.listNotes({ nodeIds }),
+      this.ai.wikiOverview(target.vaultId),
+      this.content.listTasks({ nodeIds: target.nodeIds }),
+      this.content.listNotes({ nodeIds: target.nodeIds }),
     ]);
     const filtered = this.filterWikiPeriod(tasks, notes, period);
     return {
@@ -147,13 +147,14 @@ export class MeService {
     const ownerNodeId = this.requireOwnNode(user);
     const scope = payload.scope || "personal";
     const nodeIds = scope === "team" ? [ownerNodeId, ...(await this.descendantIds(ownerNodeId))] : [ownerNodeId];
+    if (scope === "team" && nodeIds.length <= 1 && !user.isSuperuser) throw new ForbiddenException("No subordinate team view is available");
     const [node, tasks, notes] = await Promise.all([
       this.prisma.teamNode.findUnique({ where: { id: ownerNodeId } }),
       this.content.listTasks({ nodeIds }),
       this.content.listNotes({ nodeIds }),
     ]);
     const filtered = this.filterWikiPeriod(tasks, notes, payload.period);
-    const result = await this.ai.ingestWikiContent(user.id, {
+    const result = await this.ai.ingestWikiContent(this.editableWikiVaultId(user, scope === "team" ? "team" : "personal"), {
       language: payload.language,
       sourceName: `workspace-${scope}-${payload.period}`,
       content: this.workspaceWikiSource(payload.period, scope, node?.name || user.email, filtered),
@@ -169,25 +170,26 @@ export class MeService {
     };
   }
 
-  queryLlmWiki(user: AuthUser, payload: QueryLlmWikiDto) {
-    return this.ai.queryWiki(user.id, payload);
+  async queryLlmWiki(user: AuthUser, payload: QueryLlmWikiDto) {
+    const target = await this.resolveWikiTarget(user, payload);
+    return this.ai.queryWiki(target.vaultId, { ...payload, saveAsPage: target.canEdit && payload.saveAsPage });
   }
 
   lintLlmWiki(user: AuthUser, payload: LintLlmWikiDto) {
-    return this.ai.lintWiki(user.id, payload);
+    return this.ai.lintWiki(this.editableWikiVaultId(user, payload.view), payload);
   }
 
-  async readLlmWikiPage(user: AuthUser, pagePath: string, ownerId?: string) {
-    const target = await this.resolveWikiOwner(user, ownerId);
-    return this.ai.readWikiPage(target.owner.id, pagePath);
+  async readLlmWikiPage(user: AuthUser, pagePath: string, options: { ownerId?: string; view?: LlmWikiViewMode; scope?: LlmWikiScope }) {
+    const target = await this.resolveWikiTarget(user, options);
+    return this.ai.readWikiPage(target.vaultId, pagePath);
   }
 
   updateLlmWikiPage(user: AuthUser, payload: UpdateLlmWikiPageDto) {
-    return this.ai.updateWikiPage(user.id, payload);
+    return this.ai.updateWikiPage(this.editableWikiVaultId(user, payload.view), payload);
   }
 
-  deleteLlmWikiPage(user: AuthUser, pagePath: string) {
-    return this.ai.deleteWikiPage(user.id, pagePath);
+  deleteLlmWikiPage(user: AuthUser, pagePath: string, view?: LlmWikiViewMode) {
+    return this.ai.deleteWikiPage(this.editableWikiVaultId(user, view), pagePath);
   }
 
   async createTask(user: AuthUser, payload: Omit<CreateTaskDto, "ownerNodeId">) {
@@ -301,14 +303,64 @@ export class MeService {
     return user.teamNodeId;
   }
 
-  private async resolveWikiOwner(user: AuthUser, ownerId?: string) {
-    const targetId = ownerId || user.id;
+  private editableWikiVaultId(user: AuthUser, view?: LlmWikiViewMode) {
+    if (view === "team") {
+      this.requireOwnNode(user);
+      return this.teamWikiVaultId(user.id);
+    }
+    return user.id;
+  }
+
+  private async resolveWikiTarget(
+    user: AuthUser,
+    options: { ownerId?: string; view?: LlmWikiViewMode; scope?: LlmWikiScope },
+  ): Promise<{ vaultId: string; publicOwner: LlmWikiOwner; nodeIds: string[]; canEdit: boolean }> {
+    const ownerNodeId = this.requireOwnNode(user);
+    if (options.view !== "team") {
+      const owner = await this.prisma.user.findUnique({ where: { id: user.id }, include: { teamNode: true } });
+      if (!owner) throw new NotFoundException("Wiki owner not found");
+      return {
+        vaultId: owner.id,
+        publicOwner: this.publicWikiOwner(owner, true),
+        nodeIds: owner.teamNodeId ? [owner.teamNodeId] : [],
+        canEdit: true,
+      };
+    }
+
+    const allowedNodeIds = user.isSuperuser ? await this.activeNodeIds() : [ownerNodeId, ...(await this.descendantIds(ownerNodeId))];
+    if (allowedNodeIds.length <= 1 && !user.isSuperuser) throw new ForbiddenException("No subordinate team view is available");
+
+    if (options.scope === "team") {
+      const node = await this.prisma.teamNode.findUnique({ where: { id: ownerNodeId } });
+      return {
+        vaultId: this.teamWikiVaultId(user.id),
+        publicOwner: {
+          id: `team:${user.id}`,
+          name: `${node?.name || user.email} team`,
+          title: "Team scope",
+          email: user.email,
+          teamNodeId: ownerNodeId,
+          canEdit: true,
+        },
+        nodeIds: allowedNodeIds,
+        canEdit: true,
+      };
+    }
+
+    const targetId = options.ownerId || user.id;
     const owner = await this.prisma.user.findUnique({ where: { id: targetId }, include: { teamNode: true } });
     if (!owner) throw new NotFoundException("Wiki owner not found");
-    const ownerNodeId = this.requireOwnNode(user);
-    const allowedNodeIds = user.isSuperuser ? await this.activeNodeIds() : [ownerNodeId, ...(await this.descendantIds(ownerNodeId))];
     if (!owner.teamNodeId || !allowedNodeIds.includes(owner.teamNodeId)) throw new ForbiddenException("Wiki owner is outside your team view");
-    return { owner, publicOwner: this.publicWikiOwner(owner, owner.id === user.id) };
+    return {
+      vaultId: owner.id,
+      publicOwner: this.publicWikiOwner(owner, false),
+      nodeIds: owner.teamNodeId ? [owner.teamNodeId] : [],
+      canEdit: false,
+    };
+  }
+
+  private teamWikiVaultId(userId: string) {
+    return `${userId}__team`;
   }
 
   private publicWikiOwner(

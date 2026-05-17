@@ -114,8 +114,6 @@ export class UsersService implements OnModuleInit {
     return this.prisma.teamNode.upsert({
       where: { id: data.id },
       update: {
-        name: data.name,
-        title: data.title,
         parentId: data.parentId,
         sortOrder: data.sortOrder,
         active: true,
@@ -130,16 +128,13 @@ export class UsersService implements OnModuleInit {
     });
   }
 
-  private upsertUser(data: Prisma.UserUncheckedCreateInput) {
-    return this.prisma.user.upsert({
-      where: { email: data.email },
-      update: {
-        passwordHash: data.passwordHash,
-        role: data.role,
-        isSuperuser: data.isSuperuser,
-        teamNodeId: data.teamNodeId,
-      },
-      create: data,
-    });
+  private async upsertUser(data: Prisma.UserUncheckedCreateInput) {
+    const existingById = await this.prisma.user.findUnique({ where: { id: data.id } });
+    if (existingById) return existingById;
+
+    const existingByEmail = await this.prisma.user.findUnique({ where: { email: data.email } });
+    if (existingByEmail) return existingByEmail;
+
+    return this.prisma.user.create({ data });
   }
 }

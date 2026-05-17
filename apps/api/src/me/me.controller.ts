@@ -6,7 +6,7 @@ import { TaskPriority, TaskStatus } from "../common/workspace-types";
 import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
-import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, QueryLlmWikiDto, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
+import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, LlmWikiScope, LlmWikiViewMode, QueryLlmWikiDto, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
 import { MeService } from "./me.service";
 
 @UseGuards(JwtAuthGuard)
@@ -41,8 +41,13 @@ export class MeController {
   }
 
   @Get("llm-wiki")
-  llmWikiOverview(@CurrentUser() user: AuthUser, @Query("ownerId") ownerId?: string) {
-    return this.me.llmWikiOverview(user, ownerId);
+  llmWikiOverview(
+    @CurrentUser() user: AuthUser,
+    @Query("ownerId") ownerId?: string,
+    @Query("view") view?: LlmWikiViewMode,
+    @Query("scope") scope: LlmWikiScope = "personal",
+  ) {
+    return this.me.llmWikiOverview(user, { ownerId, view: view || (ownerId ? "team" : "personal"), scope });
   }
 
   @Get("llm-wiki/owners")
@@ -55,8 +60,9 @@ export class MeController {
     @CurrentUser() user: AuthUser,
     @Query("period") period: GenerateLlmWikiDto["period"] = "weekly",
     @Query("scope") scope: NonNullable<GenerateLlmWikiDto["scope"]> = "personal",
+    @Query("ownerId") ownerId?: string,
   ) {
-    return this.me.llmWikiReferenceStats(user, period, scope);
+    return this.me.llmWikiReferenceStats(user, period, scope, ownerId);
   }
 
   @Post("llm-wiki/sources")
@@ -85,8 +91,14 @@ export class MeController {
   }
 
   @Get("llm-wiki/pages")
-  readLlmWikiPage(@CurrentUser() user: AuthUser, @Query("path") path: string, @Query("ownerId") ownerId?: string) {
-    return this.me.readLlmWikiPage(user, path, ownerId);
+  readLlmWikiPage(
+    @CurrentUser() user: AuthUser,
+    @Query("path") path: string,
+    @Query("ownerId") ownerId?: string,
+    @Query("view") view?: LlmWikiViewMode,
+    @Query("scope") scope: LlmWikiScope = "personal",
+  ) {
+    return this.me.readLlmWikiPage(user, path, { ownerId, view: view || (ownerId ? "team" : "personal"), scope });
   }
 
   @Patch("llm-wiki/pages")
@@ -95,8 +107,8 @@ export class MeController {
   }
 
   @Delete("llm-wiki/pages")
-  deleteLlmWikiPage(@CurrentUser() user: AuthUser, @Query("path") path: string) {
-    return this.me.deleteLlmWikiPage(user, path);
+  deleteLlmWikiPage(@CurrentUser() user: AuthUser, @Query("path") path: string, @Query("view") view: LlmWikiViewMode = "personal") {
+    return this.me.deleteLlmWikiPage(user, path, view);
   }
 
   @Post("tasks")

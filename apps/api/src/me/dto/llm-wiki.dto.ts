@@ -1,5 +1,8 @@
 import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from "class-validator";
 
+export type LlmWikiViewMode = "personal" | "team";
+export type LlmWikiScope = "personal" | "team";
+
 export class UploadLlmWikiSourceDto {
   @IsString()
   @MinLength(1)
@@ -9,6 +12,10 @@ export class UploadLlmWikiSourceDto {
   @IsString()
   @MinLength(1)
   content!: string;
+
+  @IsOptional()
+  @IsIn(["personal", "team"])
+  view?: LlmWikiViewMode;
 }
 
 export class IngestLlmWikiSourceDto {
@@ -18,6 +25,10 @@ export class IngestLlmWikiSourceDto {
 
   @IsIn(["en", "zh"])
   language!: "en" | "zh";
+
+  @IsOptional()
+  @IsIn(["personal", "team"])
+  view?: LlmWikiViewMode;
 }
 
 export class GenerateLlmWikiDto {
@@ -26,7 +37,7 @@ export class GenerateLlmWikiDto {
 
   @IsOptional()
   @IsIn(["personal", "team"])
-  scope?: "personal" | "team";
+  scope?: LlmWikiScope;
 
   @IsIn(["en", "zh"])
   language!: "en" | "zh";
@@ -44,11 +55,27 @@ export class QueryLlmWikiDto {
   @IsOptional()
   @IsBoolean()
   saveAsPage?: boolean;
+
+  @IsOptional()
+  @IsIn(["personal", "team"])
+  view?: LlmWikiViewMode;
+
+  @IsOptional()
+  @IsIn(["personal", "team"])
+  scope?: LlmWikiScope;
+
+  @IsOptional()
+  @IsString()
+  ownerId?: string;
 }
 
 export class LintLlmWikiDto {
   @IsIn(["en", "zh"])
   language!: "en" | "zh";
+
+  @IsOptional()
+  @IsIn(["personal", "team"])
+  view?: LlmWikiViewMode;
 }
 
 export class UpdateLlmWikiPageDto {
@@ -59,4 +86,8 @@ export class UpdateLlmWikiPageDto {
   @IsString()
   @MinLength(1)
   content!: string;
+
+  @IsOptional()
+  @IsIn(["personal", "team"])
+  view?: LlmWikiViewMode;
 }

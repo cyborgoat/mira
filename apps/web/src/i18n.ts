@@ -147,6 +147,10 @@ export const resources = {
         pageOwner: "Owner: {{owner}}",
         ownerEditable: "Owner editable",
         readOnly: "Read only",
+        viewPane: "View pane",
+        personalPane: "Personal wiki",
+        teamTarget: "Team wiki target",
+        teamScope: "Team scope",
         scope: "Generation source",
         scopes: {
           personal: "Personal info",
@@ -399,6 +403,10 @@ export const resources = {
         pageOwner: "所有人：{{owner}}",
         ownerEditable: "本人可编辑",
         readOnly: "只读",
+        viewPane: "视图",
+        personalPane: "个人 Wiki",
+        teamTarget: "团队 Wiki 目标",
+        teamScope: "团队范围",
         scope: "生成来源",
         scopes: {
           personal: "个人信息",
