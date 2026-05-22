@@ -1,0 +1,106 @@
+:root {
+  --mira-primary: #1B2A4E;
+  --mira-primary-2: #2C3F6B;
+  --mira-gold: #E8B86D;
+  --mira-gold-2: #F2D29B;
+  --mira-mist: #E7ECF3;
+  --mira-bg: #F5F7FB;
+  --mira-text: #1B2A4E;
+  --mira-text-muted: #6B7A99;
+  --mira-success: #52C41A;
+  --mira-warning: #FAAD14;
+  --mira-danger: #FF4D4F;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--mira-bg);
+  color: var(--mira-text);
+}
+
+#root {
+  height: 100vh;
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(27, 42, 78, 0.15);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Boot loading */
+.boot-loading {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #1B2A4E 0%, #2C3F6B 100%);
+  color: #fff;
+}
+.boot-logo {
+  font-size: 64px;
+  margin-bottom: 16px;
+  animation: pulse 2s infinite;
+}
+.boot-title {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: 4px;
+  margin-bottom: 8px;
+}
+.boot-tip {
+  font-size: 14px;
+  opacity: 0.7;
+  letter-spacing: 2px;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+/* Page top card gradient */
+.page-header-card {
+  background: linear-gradient(135deg, #1B2A4E 0%, #2C3F6B 100%);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+}
+.page-header-card h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+  margin: 0 0 4px 0;
+}
+.page-header-card .subtitle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+}
+.page-header-card .watermark {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 80px;
+  opacity: 0.08;
+  line-height: 1;
+  user-select: none;
+}
