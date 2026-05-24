@@ -529,9 +529,9 @@ export class WorkspaceContentService {
 
   private dataDir() {
     const candidates = [
-      resolve(__dirname, "../../data"),
-      resolve(process.cwd(), "apps/api/data"),
-      resolve(process.cwd(), "data"),
+      resolve(process.cwd(), "../../mira-workspace"),
+      resolve(process.cwd(), "mira-workspace"),
+      resolve(__dirname, "../../../../mira-workspace"),
     ];
     return candidates.find((path) => existsSync(path)) || candidates[0];
   }

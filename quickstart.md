@@ -165,7 +165,7 @@ Restart the API after changing `.env`.
 Example upload files:
 
 ```text
-apps/api/data/examples/llm-wiki/sources/
+mira-workspace/examples/llm-wiki/sources/
 ```
 
 ## Useful Commands

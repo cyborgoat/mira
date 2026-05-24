@@ -302,9 +302,9 @@ export class AiService {
 
   private dataDir() {
     const candidates = [
-      resolve(__dirname, "../../data"),
-      resolve(process.cwd(), "apps/api/data"),
-      resolve(process.cwd(), "data"),
+      resolve(process.cwd(), "../../mira-workspace"),
+      resolve(process.cwd(), "mira-workspace"),
+      resolve(__dirname, "../../../../mira-workspace"),
     ];
     return candidates.find((path) => existsSync(path)) || candidates[0];
   }
@@ -724,8 +724,8 @@ export class AiService {
 
   private openRouterHeaders() {
     return {
-      "HTTP-Referer": this.configString("MIRA_AI_APP_URL", "http://localhost:5173"),
-      "X-Title": this.configString("MIRA_AI_APP_NAME", "Mira"),
+      "HTTP-Referer": "http://localhost:5173",
+      "X-Title": "Mira",
     };
   }
 

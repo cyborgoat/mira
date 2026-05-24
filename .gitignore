@@ -148,9 +148,10 @@ __pycache__/
 .ruff_cache/
 .venv/
 
-# Mira local-first runtime workspace
-mira-workspace/
+# Mira local-first runtime scratch files
 apps/api/tmp/
 apps/api/prisma/tmp/
 *.sqlite
 *.sqlite3
+!mira-workspace/**/*.sqlite
+!mira-workspace/**/*.sqlite3

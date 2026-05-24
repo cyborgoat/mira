@@ -104,11 +104,16 @@ Proxy behavior:
 - `MIRA_AI_PROXY=off`: bypass proxy.
 - `MIRA_AI_PROXY=http://host:port`: use that proxy.
 
-Useful wiki/workspace paths:
+Default wiki/workspace content lives in:
 
 ```text
-MIRA_WORKSPACE_ROOT=./apps/api/data/workspace
-MIRA_WIKI_ROOT=./apps/api/data/llm-wiki
+mira-workspace/workspace/
+mira-workspace/llm-wiki/
+```
+
+Optional wiki/workspace limits:
+
+```text
 MIRA_WIKI_MAX_SOURCE_BYTES=1000000
 MIRA_WIKI_SOURCE_PROMPT_CHARS=60000
 MIRA_WIKI_CONTEXT_CHARS=90000
@@ -117,7 +122,7 @@ MIRA_WIKI_CONTEXT_CHARS=90000
 Example source files for LLM Wiki uploads live in:
 
 ```text
-apps/api/data/examples/llm-wiki/sources/
+mira-workspace/examples/llm-wiki/sources/
 ```
 
 ## Build And Test
@@ -168,8 +173,8 @@ mira-workspace/mira-api.sqlite3
 Default markdown workspace and wiki content:
 
 ```text
-apps/api/data/workspace/
-apps/api/data/llm-wiki/
+mira-workspace/workspace/
+mira-workspace/llm-wiki/
 ```
 
-Set `MIRA_DATABASE_URL`, `MIRA_WORKSPACE_ROOT`, or `MIRA_WIKI_ROOT` to move runtime data outside the repository.
+Set `MIRA_DATABASE_URL`, `MIRA_WORKSPACE_ROOT`, or `MIRA_WIKI_ROOT` to move runtime data outside the repository. Use absolute paths for root overrides in `apps/api/.env`.

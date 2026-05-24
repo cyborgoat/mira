@@ -12,6 +12,7 @@ describe("Mira Nest API", () => {
   let prisma: PrismaService;
   let token: string;
   const apiRoot = join(__dirname, "..");
+  const repoRoot = join(apiRoot, "..", "..");
   const dbPath = join(apiRoot, "tmp", "test.sqlite");
   const wikiRoot = join(apiRoot, "tmp", "wiki");
   const workspaceRoot = join(apiRoot, "tmp", "workspace");
@@ -21,7 +22,7 @@ describe("Mira Nest API", () => {
     rmSync(dbPath, { force: true });
     rmSync(wikiRoot, { force: true, recursive: true });
     rmSync(workspaceRoot, { force: true, recursive: true });
-    cpSync(join(apiRoot, "data", "workspace"), workspaceRoot, { recursive: true });
+    cpSync(join(repoRoot, "mira-workspace", "workspace"), workspaceRoot, { recursive: true });
     renameSync(join(workspaceRoot, "people", TEST_USER_IDS.alex), join(workspaceRoot, "people", "alex-chen"));
     process.env.MIRA_DATABASE_URL = `file:${dbPath}`;
     process.env.DATABASE_URL = `file:${dbPath}`;
