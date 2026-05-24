@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { TaskPriority, TaskStatus } from "../common/workspace-types";
 import { TeamService } from "../team/team.service";
 import { WorkspaceContentService } from "../workspace-content/workspace-content.service";
@@ -17,6 +17,8 @@ export class TasksService {
   }
 
   async create(payload: CreateTaskDto) {
+    if (payload.ownerUserId) return this.content.createTaskForUser(payload.ownerUserId, payload);
+    if (!payload.ownerNodeId) throw new BadRequestException("ownerNodeId or ownerUserId is required");
     await this.team.idsForScope(payload.ownerNodeId, "self");
     return this.content.createTask(payload.ownerNodeId, payload);
   }

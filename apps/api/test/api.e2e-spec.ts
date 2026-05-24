@@ -1,11 +1,11 @@
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { PrismaClient } from "@prisma/client";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import request from "supertest";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { seedTestDb, TEST_USER_IDS } from "./seed-test-db";
 
 describe("Mira Nest API", () => {
   let app: INestApplication;
@@ -22,15 +22,14 @@ describe("Mira Nest API", () => {
     rmSync(wikiRoot, { force: true, recursive: true });
     rmSync(workspaceRoot, { force: true, recursive: true });
     cpSync(join(apiRoot, "data", "workspace"), workspaceRoot, { recursive: true });
+    renameSync(join(workspaceRoot, "people", TEST_USER_IDS.alex), join(workspaceRoot, "people", "alex-chen"));
     process.env.MIRA_DATABASE_URL = `file:${dbPath}`;
     process.env.DATABASE_URL = `file:${dbPath}`;
     process.env.MIRA_WIKI_ROOT = wikiRoot;
     process.env.MIRA_WORKSPACE_ROOT = workspaceRoot;
-    process.env.MIRA_SUPERUSER_EMAIL = "admin@example.com";
-    process.env.MIRA_SUPERUSER_PASSWORD = "password123";
     process.env.MIRA_JWT_SECRET = "test-secret";
 
-    await createTestSchema(dbPath);
+    await seedTestDb(dbPath, "password123");
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -92,6 +91,15 @@ describe("Mira Nest API", () => {
   it("creates work records and aggregates team view", async () => {
     const root = await prisma.teamNode.findFirstOrThrow({ where: { name: "Engineering" } });
     const child = await prisma.teamNode.findFirstOrThrow({ where: { name: "Frontend" } });
+    await prisma.user.create({
+      data: {
+        id: TEST_USER_IDS.frontend,
+        email: "frontend@example.com",
+        passwordHash: "unused",
+        role: "Engineer",
+        teamNodeId: child.id,
+      },
+    });
 
     await request(app.getHttpServer())
       .post("/tasks")
@@ -104,8 +112,8 @@ describe("Mira Nest API", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ ownerNodeId: child.id, title: "Planning", date: new Date().toISOString(), content: "Team mode", tags: "planning,api" })
       .expect(201);
-    expect(readFileSync(join(workspaceRoot, "people", "frontend", "tasks.md"), "utf8")).toContain("Ship API");
-    const frontendNotesDir = join(workspaceRoot, "people", "frontend", "notes");
+    expect(readFileSync(join(workspaceRoot, "people", TEST_USER_IDS.frontend, "tasks.md"), "utf8")).toContain("Ship API");
+    const frontendNotesDir = join(workspaceRoot, "people", TEST_USER_IDS.frontend, "notes");
     expect(existsSync(frontendNotesDir)).toBe(true);
     const noteFiles = readdirSync(frontendNotesDir).filter((file) => file.endsWith(".md"));
     expect(noteFiles).toHaveLength(1);
@@ -116,6 +124,8 @@ describe("Mira Nest API", () => {
 
     const tree = await request(app.getHttpServer()).get(`/tasks?nodeId=${root.id}&scope=tree`).set("Authorization", `Bearer ${token}`).expect(200);
     expect(tree.body).toHaveLength(1);
+    expect(tree.body[0].ownerUserId).toBe(TEST_USER_IDS.frontend);
+    expect(tree.body[0].ownerNodeId).toBe(child.id);
     expect(tree.body[0].priority).toBe("high");
     expect(tree.body[0].dueDate).toBeTruthy();
 
@@ -143,6 +153,9 @@ describe("Mira Nest API", () => {
     expect(updatedProfile.body.email).toBe("lead@example.com");
     expect(updatedProfile.body.role).toBe("Delivery Owner");
     expect(updatedProfile.body.teamNode.name).toBe("Product Lead");
+    expect(existsSync(join(workspaceRoot, "people", TEST_USER_IDS.manager))).toBe(true);
+    expect(readFileSync(join(workspaceRoot, "people", TEST_USER_IDS.manager, "person.md"), "utf8")).toContain("# Product Lead");
+    expect(readFileSync(join(workspaceRoot, "people", TEST_USER_IDS.manager, "tasks.md"), "utf8")).toContain("Review onboarding wiki scope");
 
     await request(app.getHttpServer())
       .patch("/me/password")
@@ -162,8 +175,11 @@ describe("Mira Nest API", () => {
 
     expect(alexLogin.body.user.role).toBe("Frontend Specialist");
     expect(alexLogin.body.user.canViewTeam).toBe(false);
+    expect(existsSync(join(workspaceRoot, "people", TEST_USER_IDS.alex))).toBe(true);
+    expect(existsSync(join(workspaceRoot, "people", "alex-chen"))).toBe(false);
 
     const managerWork = await request(app.getHttpServer()).get("/me/work?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
+    expect(managerWork.body.tasks[0].ownerUserId).toBe(TEST_USER_IDS.manager);
     expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).toContain("Review onboarding wiki scope");
     expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).not.toContain("Polish LLM Wiki console states");
 
@@ -241,11 +257,11 @@ describe("Mira Nest API", () => {
     const generated = await request(app.getHttpServer())
       .post("/me/llm-wiki/generate")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ period: "weekly", scope: "personal", language: "en" })
+      .send({ period: "monthly", scope: "personal", language: "en" })
       .expect(201);
     expect(generated.body.summary).toBe("Roadmap source ingested.");
     let aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(aiBody.messages[1].content).toContain("Source name: workspace-personal-weekly");
+    expect(aiBody.messages[1].content).toContain("Source name: workspace-personal-monthly");
     expect(aiBody.messages[1].content).toContain("Scope: personal");
     expect(aiBody.messages[1].content).toContain("Review onboarding wiki scope");
     expect(aiBody.messages[1].content).not.toContain("Polish LLM Wiki console states");
@@ -254,17 +270,17 @@ describe("Mira Nest API", () => {
     const teamGenerated = await request(app.getHttpServer())
       .post("/me/llm-wiki/generate")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ period: "weekly", scope: "team", language: "en" })
+      .send({ period: "monthly", scope: "team", language: "en" })
       .expect(201);
     expect(teamGenerated.body.referenceStats.tasks).toBeGreaterThan(generated.body.referenceStats.tasks);
     aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(aiBody.messages[1].content).toContain("Source name: workspace-team-weekly");
+    expect(aiBody.messages[1].content).toContain("Source name: workspace-team-monthly");
     expect(aiBody.messages[1].content).toContain("Scope: team");
     expect(aiBody.messages[1].content).toContain("Review onboarding wiki scope");
     expect(aiBody.messages[1].content).toContain("Polish LLM Wiki console states");
 
     const teamStats = await request(app.getHttpServer())
-      .get("/me/llm-wiki/reference-stats?period=weekly&scope=team")
+      .get("/me/llm-wiki/reference-stats?period=monthly&scope=team")
       .set("Authorization", `Bearer ${managerToken}`)
       .expect(200);
     expect(teamStats.body.wikiPages).toBeGreaterThan(0);
@@ -274,7 +290,7 @@ describe("Mira Nest API", () => {
     await request(app.getHttpServer())
       .post("/me/llm-wiki/generate")
       .set("Authorization", `Bearer ${alexToken}`)
-      .send({ period: "weekly", scope: "personal", language: "en" })
+      .send({ period: "monthly", scope: "personal", language: "en" })
       .expect(201);
     aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
     expect(aiBody.messages[1].content).toContain("Polish LLM Wiki console states");
@@ -302,7 +318,7 @@ describe("Mira Nest API", () => {
       .expect(200);
 
     await request(app.getHttpServer())
-      .get("/me/llm-wiki?ownerId=usr_manager")
+      .get(`/me/llm-wiki?ownerId=${TEST_USER_IDS.manager}`)
       .set("Authorization", `Bearer ${alexToken}`)
       .expect(403);
 
@@ -355,16 +371,16 @@ describe("Mira Nest API", () => {
     const editedPage = await request(app.getHttpServer())
       .patch("/me/llm-wiki/pages")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ path: "pages/roadmap-answer.md", content: "# Roadmap Answer\n\nEdited owner page." })
+      .send({ path: "pages/roadmap.md", content: "# Roadmap Answer\n\nEdited owner page." })
       .expect(200);
     expect(editedPage.body.content).toContain("Edited owner page.");
 
     await request(app.getHttpServer())
-      .delete("/me/llm-wiki/pages?path=pages%2Froadmap-answer.md")
+      .delete("/me/llm-wiki/pages?path=pages%2Froadmap.md")
       .set("Authorization", `Bearer ${managerToken}`)
       .expect(200);
     await request(app.getHttpServer())
-      .get("/me/llm-wiki/pages?path=pages%2Froadmap-answer.md")
+      .get("/me/llm-wiki/pages?path=pages%2Froadmap.md")
       .set("Authorization", `Bearer ${managerToken}`)
       .expect(404);
 
@@ -377,41 +393,3 @@ describe("Mira Nest API", () => {
     await request(app.getHttpServer()).get("/tasks").set("Authorization", `Bearer ${managerToken}`).expect(403);
   });
 });
-
-async function createTestSchema(dbPath: string) {
-  const client = new PrismaClient({
-    datasources: {
-      db: {
-        url: `file:${dbPath}`,
-      },
-    },
-  });
-  await client.$connect();
-  await client.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS User (
-      id TEXT NOT NULL PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      passwordHash TEXT NOT NULL,
-      role TEXT,
-      isSuperuser BOOLEAN NOT NULL DEFAULT false,
-      teamNodeId TEXT,
-      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME NOT NULL,
-      CONSTRAINT User_teamNodeId_fkey FOREIGN KEY (teamNodeId) REFERENCES TeamNode (id) ON DELETE SET NULL ON UPDATE CASCADE
-    )
-  `);
-  await client.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS TeamNode (
-      id TEXT NOT NULL PRIMARY KEY,
-      parentId TEXT,
-      name TEXT NOT NULL,
-      title TEXT,
-      sortOrder INTEGER NOT NULL DEFAULT 0,
-      active BOOLEAN NOT NULL DEFAULT true,
-      createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME NOT NULL,
-      CONSTRAINT TeamNode_parentId_fkey FOREIGN KEY (parentId) REFERENCES TeamNode (id) ON DELETE SET NULL ON UPDATE CASCADE
-    )
-  `);
-  await client.$disconnect();
-}

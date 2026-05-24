@@ -34,7 +34,7 @@ const nav: Array<{ key: Route; icon: React.ComponentType<{ size?: number }> }> =
 export function App() {
   const { t } = useTranslation();
   const [route, setRoute] = useState<Route>(() => resolveRouteFromHash(navKeys, "stats"));
-  const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("weekly");
+  const [period, setPeriod] = useState<"daily" | "weekly" | "monthly">("monthly");
   const [viewMode, setViewMode] = useState<ViewMode>("personal");
   const api = useMiraApi();
   const activeView = viewMode === "team" && api.teamView ? api.teamView : api.workView;

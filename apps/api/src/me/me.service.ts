@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { AiService, LlmWikiOwner, LlmWikiReferenceStats } from "../ai/ai.service";
 import { AuthUser } from "../auth/current-user";
@@ -35,6 +34,14 @@ type AskIndexDocument = {
   path?: string;
   content: string;
   updatedAt: string;
+};
+
+type WikiOwnerRecord = {
+  id: string;
+  email: string;
+  role: string | null;
+  teamNodeId: string | null;
+  teamNode: { id: string; name: string; title: string | null; sortOrder?: number | null } | null;
 };
 
 @Injectable()
@@ -84,7 +91,7 @@ export class MeService {
   }
 
   async updateProfile(user: AuthUser, payload: UpdateProfileDto) {
-    const data: Prisma.UserUpdateInput = {};
+    const data: { email?: string; role?: string | null } = {};
     if (payload.email !== undefined) {
       const email = payload.email.toLowerCase().trim();
       const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -103,6 +110,7 @@ export class MeService {
 
     const updated = await this.users.findById(user.id);
     if (!updated) throw new NotFoundException("User not found");
+    await this.content.syncUser(user.id);
     return this.users.toPublicUser(updated);
   }
 
@@ -139,8 +147,8 @@ export class MeService {
       orderBy: { email: "asc" },
     });
     return owners
-      .sort((a, b) => (a.teamNode?.sortOrder ?? 0) - (b.teamNode?.sortOrder ?? 0) || a.email.localeCompare(b.email))
-      .map((owner) => this.publicWikiOwner(owner, owner.id === user.id));
+      .sort((a: WikiOwnerRecord, b: WikiOwnerRecord) => (a.teamNode?.sortOrder ?? 0) - (b.teamNode?.sortOrder ?? 0) || a.email.localeCompare(b.email))
+      .map((owner: WikiOwnerRecord) => this.publicWikiOwner(owner, owner.id === user.id));
   }
 
   uploadLlmWikiSource(user: AuthUser, payload: UploadLlmWikiSourceDto) {
@@ -264,7 +272,7 @@ export class MeService {
     return this.ai.deleteWikiPage(this.editableWikiVaultId(user, view), pagePath);
   }
 
-  private async buildAskIndex(scopeKey: string, targetUsers: Array<Prisma.UserGetPayload<{ include: { teamNode: true } }>>) {
+  private async buildAskIndex(scopeKey: string, targetUsers: WikiOwnerRecord[]) {
     const documents: AskIndexDocument[] = [];
     for (const owner of targetUsers) {
       const ownerId = owner.id;
@@ -365,7 +373,7 @@ export class MeService {
       .filter((document) => document.content.trim());
     const chunks = sanitized.slice(0, 420);
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx: any) => {
       await tx.$executeRawUnsafe("DELETE FROM mira_ask_index WHERE scope_key = ?", scopeKey);
       for (const doc of chunks) {
         await tx.$executeRawUnsafe(
@@ -388,7 +396,7 @@ export class MeService {
     });
   }
 
-  private async resolveAskUsers(user: AuthUser, scope: "personal" | "team", ownerId?: string) {
+  private async resolveAskUsers(user: AuthUser, scope: "personal" | "team", ownerId?: string): Promise<WikiOwnerRecord[]> {
     const ownerNodeId = this.requireOwnNode(user);
     if (scope === "personal") {
       const owner = await this.prisma.user.findUnique({
@@ -420,7 +428,7 @@ export class MeService {
           sortOrder: "asc",
         },
       },
-    });
+    }) as Promise<WikiOwnerRecord[]>;
   }
 
   private askScopeKey(userId: string, scope: "personal" | "team", ownerId?: string) {
@@ -455,7 +463,7 @@ export class MeService {
   }
 
   private async searchAskIndex(scopeKey: string, question: string): Promise<AskIndexRow[]> {
-    const rows = await this.prisma.$queryRawUnsafe<AskIndexRow[]>(
+    const rows = await (this.prisma.$queryRawUnsafe as (...args: unknown[]) => Promise<AskIndexRow[]>)(
       `
         SELECT
           source_id AS sourceId,
@@ -476,19 +484,19 @@ export class MeService {
 
     const terms = this.tokenize(question);
     const scored = rows
-      .map((row) => {
+      .map((row: AskIndexRow) => {
         const score = this.scoreDocument(row, terms);
         return { ...row, score };
       })
-      .sort((a, b) => b.score - a.score)
+      .sort((a: AskIndexRow & { score: number }, b: AskIndexRow & { score: number }) => b.score - a.score)
       .slice(0, 200);
 
     const topScored = scored
-      .filter((row) => row.score > 0)
-      .map((row) => ({ ...row }));
+      .filter((row: AskIndexRow & { score: number }) => row.score > 0)
+      .map((row: AskIndexRow & { score: number }) => ({ ...row }));
 
     if (topScored.length) {
-      return topScored.map((item) => ({
+      return topScored.map((item: AskIndexRow & { score: number }) => ({
         sourceId: item.sourceId,
         sourceType: item.sourceType,
         title: item.title,
@@ -500,7 +508,7 @@ export class MeService {
       }));
     }
 
-    return scored.slice(0, this.askIndexResults).map((row) => ({
+    return scored.slice(0, this.askIndexResults).map((row: AskIndexRow & { score: number }) => ({
       sourceId: row.sourceId,
       sourceType: row.sourceType,
       title: row.title,
@@ -555,29 +563,33 @@ export class MeService {
   }
 
   async createTask(user: AuthUser, payload: Omit<CreateTaskDto, "ownerNodeId">) {
-    const ownerNodeId = this.requireOwnNode(user);
-    return this.content.createTask(ownerNodeId, payload);
+    this.requireOwnNode(user);
+    return this.content.createTaskForUser(user.id, payload);
   }
 
   async updateTask(user: AuthUser, id: string, payload: UpdateTaskDto) {
-    return this.content.updateTask(id, payload, this.requireOwnNode(user));
+    this.requireOwnNode(user);
+    return this.content.updateTaskForUser(id, payload, user.id);
   }
 
   async deleteTask(user: AuthUser, id: string) {
-    return this.content.deleteTask(id, this.requireOwnNode(user));
+    this.requireOwnNode(user);
+    return this.content.deleteTaskForUser(id, user.id);
   }
 
   async createNote(user: AuthUser, payload: Omit<CreateNoteDto, "ownerNodeId">) {
-    const ownerNodeId = this.requireOwnNode(user);
-    return this.content.createNote(ownerNodeId, payload);
+    this.requireOwnNode(user);
+    return this.content.createNoteForUser(user.id, payload);
   }
 
   async updateNote(user: AuthUser, id: string, payload: UpdateNoteDto) {
-    return this.content.updateNote(id, payload, this.requireOwnNode(user));
+    this.requireOwnNode(user);
+    return this.content.updateNoteForUser(id, payload, user.id);
   }
 
   async deleteNote(user: AuthUser, id: string) {
-    return this.content.deleteNote(id, this.requireOwnNode(user));
+    this.requireOwnNode(user);
+    return this.content.deleteNoteForUser(id, user.id);
   }
 
   private viewPayload(selectedNode: unknown, descendantIds: string[], data: { tasks: Array<{ status: TaskStatus }>; notes: unknown[] }) {
@@ -601,10 +613,11 @@ export class MeService {
     const start = periodStart(period);
     return {
       tasks: tasks.filter((task) => {
-        const value = task as { createdAt: Date | string; completedAt: Date | string | null };
+        const value = task as { createdAt: Date | string; completedAt: Date | string | null; dueDate?: Date | string | null };
         const createdAt = value.createdAt instanceof Date ? value.createdAt : new Date(value.createdAt);
         const completedAt = value.completedAt ? (value.completedAt instanceof Date ? value.completedAt : new Date(value.completedAt)) : null;
-        return createdAt >= start || Boolean(completedAt && completedAt >= start);
+        const dueDate = value.dueDate ? (value.dueDate instanceof Date ? value.dueDate : new Date(value.dueDate)) : null;
+        return createdAt >= start || Boolean(completedAt && completedAt >= start) || Boolean(dueDate && dueDate >= start);
       }),
       notes: notes.filter((note) => {
         const date = (note as { date: Date | string }).date;
@@ -726,7 +739,7 @@ export class MeService {
   }
 
   private publicWikiOwner(
-    owner: Prisma.UserGetPayload<{ include: { teamNode: true } }>,
+    owner: WikiOwnerRecord,
     canEdit: boolean,
   ): LlmWikiOwner {
     return {
@@ -750,7 +763,7 @@ export class MeService {
 
   private async activeNodeIds() {
     const nodes = await this.prisma.teamNode.findMany({ where: { active: true }, select: { id: true } });
-    return nodes.map((node) => node.id);
+    return nodes.map((node: { id: string }) => node.id);
   }
 
   private async descendantIds(rootId: string) {

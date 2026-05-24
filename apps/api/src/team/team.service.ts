@@ -1,5 +1,4 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, TeamNode } from "@prisma/client";
 import { createId } from "../common/ids";
 import { periodStart, Period } from "../common/period";
 import { PrismaService } from "../prisma/prisma.service";
@@ -44,14 +43,22 @@ export class TeamService {
       }
     }
 
-    const data: Prisma.TeamNodeUpdateInput = {};
+    const data: {
+      parent?: { connect: { id: string } } | { disconnect: true };
+      name?: string;
+      title?: string | null;
+      sortOrder?: number;
+      active?: boolean;
+    } = {};
     if (payload.parentId !== undefined) data.parent = payload.parentId ? { connect: { id: payload.parentId } } : { disconnect: true };
     if (payload.name !== undefined) data.name = payload.name.trim();
     if (payload.title !== undefined) data.title = payload.title?.trim() || null;
     if (payload.sortOrder !== undefined) data.sortOrder = payload.sortOrder;
     if (payload.active !== undefined) data.active = payload.active;
 
-    return this.prisma.teamNode.update({ where: { id }, data });
+    const updated = await this.prisma.teamNode.update({ where: { id }, data });
+    await this.content.syncTeamNodeUsers(id);
+    return updated;
   }
 
   async remove(id: string) {
@@ -84,7 +91,8 @@ export class TeamService {
     const tasks = (await this.content.listTasks({ nodeIds: descendantIds })).filter((task) => {
       const createdAt = new Date(task.createdAt);
       const completedAt = task.completedAt ? new Date(task.completedAt) : null;
-      return createdAt >= start || Boolean(completedAt && completedAt >= start);
+      const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+      return createdAt >= start || Boolean(completedAt && completedAt >= start) || Boolean(dueDate && dueDate >= start);
     });
     const notes = (await this.content.listNotes({ nodeIds: descendantIds })).filter((note) => new Date(note.date) >= start);
     const completedTasks = tasks.filter((task) => task.status === "complete").length;
@@ -130,7 +138,7 @@ export class TeamService {
       where: { active: true },
       select: { id: true, parentId: true },
     });
-    const byParent = new Map<string, TeamNode["id"][]>();
+    const byParent = new Map<string, string[]>();
     for (const node of nodes) {
       if (!node.parentId) continue;
       byParent.set(node.parentId, [...(byParent.get(node.parentId) || []), node.id]);

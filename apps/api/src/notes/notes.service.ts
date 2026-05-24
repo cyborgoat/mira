@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { TeamService } from "../team/team.service";
 import { WorkspaceContentService } from "../workspace-content/workspace-content.service";
 import { CreateNoteDto, UpdateNoteDto } from "./dto/note.dto";
@@ -16,6 +16,8 @@ export class NotesService {
   }
 
   async create(payload: CreateNoteDto) {
+    if (payload.ownerUserId) return this.content.createNoteForUser(payload.ownerUserId, payload);
+    if (!payload.ownerNodeId) throw new BadRequestException("ownerNodeId or ownerUserId is required");
     await this.team.idsForScope(payload.ownerNodeId, "self");
     return this.content.createNote(payload.ownerNodeId, payload);
   }

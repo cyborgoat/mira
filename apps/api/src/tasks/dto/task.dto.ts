@@ -1,8 +1,13 @@
-import { IsDateString, IsIn, IsOptional, IsString, MinLength } from "class-validator";
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID, MinLength } from "class-validator";
 
 export class CreateTaskDto {
+  @IsOptional()
   @IsString()
-  ownerNodeId!: string;
+  ownerNodeId?: string;
+
+  @IsOptional()
+  @IsUUID(4)
+  ownerUserId?: string;
 
   @IsString()
   @MinLength(1)

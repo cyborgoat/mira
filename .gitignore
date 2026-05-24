@@ -154,6 +154,3 @@ apps/api/tmp/
 apps/api/prisma/tmp/
 *.sqlite
 *.sqlite3
-
-# Data
-data/

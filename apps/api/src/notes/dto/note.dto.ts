@@ -1,8 +1,13 @@
-import { IsDateString, IsOptional, IsString, MinLength } from "class-validator";
+import { IsDateString, IsOptional, IsString, IsUUID, MinLength } from "class-validator";
 
 export class CreateNoteDto {
+  @IsOptional()
   @IsString()
-  ownerNodeId!: string;
+  ownerNodeId?: string;
+
+  @IsOptional()
+  @IsUUID(4)
+  ownerUserId?: string;
 
   @IsString()
   @MinLength(1)
