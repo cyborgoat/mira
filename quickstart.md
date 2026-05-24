@@ -4,7 +4,7 @@ This guide starts Mira from a fresh clone with local SQLite, seeded demo users, 
 
 ## Prerequisites
 
-- Node.js 20 or newer
+- Node.js 24 LTS
 - npm
 - Rust and Cargo for Tauri dependencies
 

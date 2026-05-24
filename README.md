@@ -19,7 +19,7 @@ Personal/team scope is controlled from the top navbar. Personal view only shows 
 
 Prerequisites:
 
-- Node.js 20 or newer
+- Node.js 24 LTS
 - npm
 - Rust and Cargo for Tauri dependencies
 
@@ -163,7 +163,7 @@ npm run build:desktop:windows
 npm run build:desktop:linux
 ```
 
-The Tauri sidecar build generates platform-suffixed API binaries under `apps/web/src-tauri/binaries/`. Those generated binaries are ignored by git.
+The Tauri sidecar build bundles the API with Node.js 24 LTS and generates platform-suffixed binaries under `apps/web/src-tauri/binaries/`. Those generated binaries are ignored by git.
 
 ## Build And Test
 

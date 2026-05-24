@@ -11,10 +11,10 @@ const binariesDir = join(webRoot, "src-tauri", "binaries");
 const mode = process.argv[2] || "host";
 
 const targets = {
-  "aarch64-apple-darwin": { pkg: "node22-macos-arm64", ext: "" },
-  "x86_64-apple-darwin": { pkg: "node22-macos-x64", ext: "" },
-  "x86_64-unknown-linux-gnu": { pkg: "node22-linux-x64", ext: "" },
-  "x86_64-pc-windows-msvc": { pkg: "node22-win-x64", ext: ".exe" },
+  "aarch64-apple-darwin": { pkg: "node24-macos-arm64", ext: "" },
+  "x86_64-apple-darwin": { pkg: "node24-macos-x64", ext: "" },
+  "x86_64-unknown-linux-gnu": { pkg: "node24-linux-x64", ext: "" },
+  "x86_64-pc-windows-msvc": { pkg: "node24-win-x64", ext: ".exe" },
 };
 
 if (!existsSync(entry)) {
