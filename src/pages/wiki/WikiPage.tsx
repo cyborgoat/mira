@@ -1,1 +1,0 @@
-export { WikiPage } from './WikiPageImpl';

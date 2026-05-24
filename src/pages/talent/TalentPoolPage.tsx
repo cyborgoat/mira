@@ -1,1 +1,0 @@
-export { TalentPoolPage } from './TalentPoolPageImpl';

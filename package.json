@@ -1,30 +1,14 @@
 {
-  "name": "mira-app-scaffold",
-  "private": true,
+  "name": "mira",
   "version": "0.1.0",
-  "type": "module",
+  "private": true,
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "tauri": "tauri"
-  },
-  "dependencies": {
-    "@ant-design/icons": "^6.2.3",
-    "@tauri-apps/api": "^2.11.0",
-    "@tauri-apps/plugin-opener": "^2",
-    "antd": "^6.4.3",
-    "dayjs": "^1.11.20",
-    "marked": "^18.0.4",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
-  },
-  "devDependencies": {
-    "@tauri-apps/cli": "^2",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "@vitejs/plugin-react": "^4.6.0",
-    "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "dev:api": "npm --prefix apps/api run dev",
+    "start:api": "npm --prefix apps/api run start",
+    "build:api": "npm --prefix apps/api run build",
+    "test:api": "npm --prefix apps/api run test",
+    "db:api": "npm --prefix apps/api run prisma:push"
   }
 }
