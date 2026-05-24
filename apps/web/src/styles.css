@@ -730,16 +730,40 @@ label strong {
   grid-template-columns: minmax(0, 1fr) minmax(260px, auto);
 }
 
+.llm-wiki-compact-bar {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 1fr);
+}
+
 .llm-wiki-generate-row {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
 }
 
 .llm-wiki-owner-row {
-  align-items: end;
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.llm-wiki-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.llm-tool-panel {
+  gap: 10px;
+}
+
+.llm-source-row {
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 0.9fr) minmax(220px, 1fr) auto;
 }
 
 .field-group {
@@ -762,7 +786,7 @@ label strong {
 
 .wiki-owner-card {
   align-items: center;
-  background: var(--mira-soft);
+  background: var(--mira-surface-2);
   border: 1px solid var(--mira-border);
   border-radius: 8px;
   display: grid;
@@ -798,7 +822,7 @@ label strong {
 }
 
 .llm-wiki-metrics span {
-  background: var(--mira-soft);
+  background: var(--mira-surface-2);
   border: 1px solid var(--mira-border);
   border-radius: 8px;
   color: var(--mira-muted);
@@ -851,7 +875,7 @@ label strong {
 .llm-wiki-browser {
   align-items: start;
   display: grid;
-  grid-template-columns: minmax(240px, 0.28fr) minmax(0, 1fr) minmax(270px, 0.34fr);
+  grid-template-columns: minmax(240px, 0.28fr) minmax(0, 1fr);
   gap: 12px;
   flex: 1 1 auto;
   min-height: 0;
@@ -881,7 +905,7 @@ label strong {
 
 .wiki-list button.active,
 .wiki-list button:hover {
-  background: var(--mira-soft);
+  background: var(--mira-surface-2);
   border-color: oklch(0.58 0.08 250);
 }
 
@@ -1271,6 +1295,10 @@ label strong {
   align-items: stretch;
 }
 
+.task-workspace {
+  grid-template-columns: minmax(420px, 1fr) minmax(300px, 0.46fr);
+}
+
 .ask-mira-layout,
 .llm-wiki-browser,
 .notes-grid,
@@ -1280,11 +1308,58 @@ label strong {
   align-items: start;
 }
 
-.editor-panel {
+.composer-panel {
+  border: 1px solid var(--mira-border);
+  border-radius: 8px;
+  background: var(--mira-surface-2);
+  padding: 10px;
+}
+
+.composer-panel h3 {
+  font-size: 14px;
+  margin-bottom: 0;
+}
+
+.task-list-panel,
+.inspector-panel,
+.note-reader-card {
+  min-width: 0;
+  min-height: 0;
+}
+
+.inspector-panel {
   position: sticky;
   top: 12px;
+  align-self: start;
   max-height: calc(100vh - 170px);
   overflow: auto;
+}
+
+.inspector-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.inspector-meta span {
+  border: 1px solid var(--mira-border);
+  border-radius: 999px;
+  background: var(--mira-surface-2);
+  color: var(--mira-muted);
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+.inspector-body {
+  border: 1px solid var(--mira-border);
+  border-radius: 8px;
+  background: var(--mira-surface-2);
+  min-height: 120px;
+  padding: 12px;
+}
+
+.inspector-body p {
+  margin-bottom: 0;
 }
 
 .task-list-scroll,
@@ -1316,7 +1391,8 @@ label strong {
 }
 
 .markdown-editor,
-.markdown-preview-card {
+.markdown-preview-card,
+.note-reader-card {
   min-height: 0;
   max-height: clamp(340px, calc(100vh - 240px), 700px);
 }
@@ -1349,6 +1425,19 @@ label strong {
   gap: 8px;
 }
 
+.selectable-row {
+  color: var(--mira-text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.selectable-row:hover,
+.selectable-row.active {
+  background: var(--mira-accent-soft);
+  border-color: oklch(0.79 0.035 245);
+}
+
 .task-check {
   min-width: 0;
 }
@@ -1361,6 +1450,10 @@ label strong {
 
 .item-body {
   margin: 0;
+}
+
+.task-date {
+  font-size: 12px;
 }
 
 .item-actions {
@@ -1376,7 +1469,7 @@ label strong {
 }
 
 .notes-grid {
-  grid-template-columns: 240px minmax(0, 1fr) minmax(320px, 0.82fr);
+  grid-template-columns: minmax(240px, 0.32fr) minmax(0, 1fr);
   align-items: start;
 }
 
@@ -1461,6 +1554,10 @@ label strong {
 .markdown-preview h2,
 .markdown-preview h3 {
   margin: 12px 0 6px;
+}
+
+.note-preview {
+  max-height: clamp(320px, calc(100vh - 255px), 760px);
 }
 
 .markdown-preview h1:first-child,
@@ -1721,7 +1818,8 @@ label strong {
   }
 
   .llm-wiki-command-main,
-  .llm-wiki-owner-row {
+  .llm-wiki-compact-bar,
+  .llm-source-row {
     grid-template-columns: 1fr;
   }
 
@@ -1729,7 +1827,7 @@ label strong {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .editor-panel {
+  .inspector-panel {
     position: static;
   }
 
@@ -1766,8 +1864,9 @@ label strong {
 
   .summary-item,
   .llm-wiki-command-main,
+  .llm-wiki-compact-bar,
   .llm-wiki-generate-row,
-  .llm-wiki-owner-row,
+  .llm-source-row,
   .wiki-owner-card,
   .editor-fields,
   .filter-row,

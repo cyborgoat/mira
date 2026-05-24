@@ -1,4 +1,4 @@
-import { Edit3, ListChecks, Plus, Save, Search, Trash2, Upload } from "lucide-react";
+import { Edit3, ListChecks, Plus, Save, Trash2, Upload, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
@@ -7,9 +7,9 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { AskMiraSource, LlmWikiOverview, LlmWikiOwner, LlmWikiReferenceStats, LlmWikiScope, LlmWikiTarget, LlmWikiPeriod, ViewMode, User, WorkView } from "../types";
-import { EmptyState, confirmAction } from "../shared";
-import { formatBytes, formatDate, nodeLabel, renderMarkdown, today, periodLabel, errorMessage, } from "../helpers";
+import type { LlmWikiOverview, LlmWikiOwner, LlmWikiReferenceStats, LlmWikiScope, LlmWikiTarget, LlmWikiPeriod, ViewMode, User } from "../types";
+import { EmptyState } from "../shared";
+import { renderMarkdown, errorMessage } from "../helpers";
 
 type LlmWikiViewProps = {
   user: User | null;
@@ -53,6 +53,7 @@ export function LlmWikiView({
   const [pageContent, setPageContent] = useState("");
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
+  const [activeTool, setActiveTool] = useState<"generate" | "source" | "lint" | null>(null);
   const [lintResult, setLintResult] = useState<{ findings: string[]; notes: string } | null>(null);
   const [generationStats, setGenerationStats] = useState<LlmWikiReferenceStats | null>(null);
   const [error, setError] = useState("");
@@ -274,6 +275,7 @@ export function LlmWikiView({
     setSelectedSource("");
     setSelectedPage("index.md");
     setLintResult(null);
+    setActiveTool(null);
   };
 
   return (
@@ -294,26 +296,26 @@ export function LlmWikiView({
           </div>
         </div>
 
-        <div className="llm-wiki-owner-row">
-          {isTeamView ? (
-            <div className="field-group">
-              <label>{t("llmWiki.teamTarget")}</label>
-              <Select value={teamTarget} onValueChange={(target) => switchTeamTarget(target)}>
-                <SelectTrigger><SelectValue placeholder={t("llmWiki.teamTarget")} /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="team">{t("llmWiki.teamScope")}</SelectItem>
-                  {owners.map((owner) => (
-                    <SelectItem value={owner.id} key={owner.id}>{owner.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          ) : (
-            <div className="field-group">
-              <label>{t("llmWiki.viewPane")}</label>
+        <div className="llm-wiki-compact-bar">
+          <div className="llm-wiki-owner-row">
+            {isTeamView ? (
+              <div className="field-group">
+                <label>{t("llmWiki.teamTarget")}</label>
+                <Select value={teamTarget} onValueChange={(target) => switchTeamTarget(target)}>
+                  <SelectTrigger><SelectValue placeholder={t("llmWiki.teamTarget")} /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="team">{t("llmWiki.teamScope")}</SelectItem>
+                    {owners.map((owner) => (
+                      <SelectItem value={owner.id} key={owner.id}>{owner.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
               <Badge>{t("llmWiki.personalPane")}</Badge>
-            </div>
-          )}
+            )}
+            <Badge>{t(`llmWiki.scopes.${wikiScope}`)}</Badge>
+          </div>
           {activeOwner && (
             <div className="wiki-owner-card">
               <strong>{activeOwner.name}</strong>
@@ -323,21 +325,104 @@ export function LlmWikiView({
           )}
         </div>
 
-        <div className="llm-wiki-generate-row">
-          <div className="llm-wiki-controls">
-            <Badge>{t(`llmWiki.scopes.${wikiScope}`)}</Badge>
-            <div className="segmented-switch llm-period-switch" role="group" aria-label={t("llmWiki.period")}>
-              {(["daily", "weekly", "monthly", "historical"] as const).map((period) => (
-                <button type="button" key={period} className={wikiPeriod === period ? "active" : ""} aria-pressed={wikiPeriod === period} onClick={() => setWikiPeriod(period)}>
-                  {t(`llmWiki.periods.${period}`)}
-                </button>
-              ))}
+        <div className="llm-wiki-action-row">
+          {canEditWiki && (
+            <>
+              <Button type="button" size="sm" onClick={() => setActiveTool(activeTool === "generate" ? null : "generate")}>
+                <Plus size={15} /> {t("llmWiki.generate")}
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTool(activeTool === "source" ? null : "source")}>
+                <Upload size={15} /> {t("llmWiki.addSource")}
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setActiveTool(activeTool === "lint" ? null : "lint")}>
+                <ListChecks size={15} /> {t("llmWiki.lint")}
+              </Button>
+            </>
+          )}
+        </div>
+
+        {canEditWiki && activeTool === "generate" && (
+          <div className="stack composer-panel llm-tool-panel">
+            <div className="row-between">
+              <h3>{t("llmWiki.generate")}</h3>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setActiveTool(null)}>
+                <X size={14} /> {t("llmWiki.cancelEdit")}
+              </Button>
+            </div>
+            <div className="llm-wiki-generate-row">
+              <div className="segmented-switch llm-period-switch" role="group" aria-label={t("llmWiki.period")}>
+                {(["daily", "weekly", "monthly", "historical"] as const).map((period) => (
+                  <button type="button" key={period} className={wikiPeriod === period ? "active" : ""} aria-pressed={wikiPeriod === period} onClick={() => setWikiPeriod(period)}>
+                    {t(`llmWiki.periods.${period}`)}
+                  </button>
+                ))}
+              </div>
+              <Button type="button" disabled={loading} onClick={generateWorkspaceWiki}>
+                <Plus size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.generate")}
+              </Button>
             </div>
           </div>
-          <Button type="button" disabled={loading || !canEditWiki} onClick={generateWorkspaceWiki}>
-            <Plus size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.generate")}
-          </Button>
-        </div>
+        )}
+
+        {canEditWiki && activeTool === "source" && (
+          <div className="stack composer-panel llm-tool-panel">
+            <div className="row-between">
+              <h3>{t("llmWiki.addSource")}</h3>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setActiveTool(null)}>
+                <X size={14} /> {t("llmWiki.cancelEdit")}
+              </Button>
+            </div>
+            <div className="llm-source-row">
+              <Input
+                type="file"
+                accept=".md,.markdown,.txt,text/markdown,text/plain"
+                disabled={loading}
+                onChange={(event) => {
+                  const input = event.currentTarget;
+                  void uploadSource(input.files?.[0]).finally(() => { input.value = ""; });
+                }}
+              />
+              <Select value={selectedSource} onValueChange={setSelectedSource}>
+                <SelectTrigger><SelectValue placeholder={t("llmWiki.noSource")} /></SelectTrigger>
+                <SelectContent>
+                  {(overview?.sources ?? []).map((source) => (
+                    <SelectItem value={source.path} key={source.path}>{source.filename}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button type="button" variant="secondary" disabled={loading || !selectedSource} onClick={ingestSource}>
+                <Upload size={15} /> {t("llmWiki.ingest")}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {canEditWiki && activeTool === "lint" && (
+          <div className="stack composer-panel llm-tool-panel">
+            <div className="row-between">
+              <h3>{t("llmWiki.health")}</h3>
+              <div className="cluster">
+                <Button type="button" variant="secondary" disabled={loading} onClick={runLint}>
+                  <ListChecks size={15} /> {loading ? t("llmWiki.working") : t("llmWiki.lint")}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setActiveTool(null)}>
+                  <X size={14} /> {t("llmWiki.cancelEdit")}
+                </Button>
+              </div>
+            </div>
+            {lintResult ? (
+              <>
+                <ul className="plain-list">
+                  {lintResult.findings.map((finding) => <li key={finding}>{finding}</li>)}
+                  {!lintResult.findings.length && <li>{t("llmWiki.noFindings")}</li>}
+                </ul>
+                {lintResult.notes && <div className="markdown compact-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(lintResult.notes) }} />}
+              </>
+            ) : (
+              <p className="muted">{t("llmWiki.tools")}</p>
+            )}
+          </div>
+        )}
 
         {error && <div className="form-error">{error}</div>}
       </Card>
@@ -404,55 +489,7 @@ export function LlmWikiView({
           )}
         </Card>
 
-        <div className="stack llm-wiki-tools">
-          <Card className="stack">
-            <h2>{t("llmWiki.tools")}</h2>
-            <div className="cluster">
-              <Button type="button" variant="secondary" disabled={loading || !canEditWiki} onClick={runLint}>
-                <ListChecks size={15} /> {t("llmWiki.lint")}
-              </Button>
-            </div>
-          </Card>
-
-          {canEditWiki && (
-            <Card className="stack">
-              <h2>{t("llmWiki.addSource")}</h2>
-              <Input
-                type="file"
-                accept=".md,.markdown,.txt,text/markdown,text/plain"
-                disabled={loading}
-                onChange={(event) => {
-                  const input = event.currentTarget;
-                  void uploadSource(input.files?.[0]).finally(() => { input.value = ""; });
-                }}
-              />
-              <Select value={selectedSource} onValueChange={setSelectedSource}>
-                <SelectTrigger><SelectValue placeholder={t("llmWiki.noSource")} /></SelectTrigger>
-                <SelectContent>
-                  {(overview?.sources ?? []).map((source) => (
-                    <SelectItem value={source.path} key={source.path}>{source.filename}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button type="button" variant="secondary" disabled={loading || !selectedSource} onClick={ingestSource}>
-                <Upload size={15} /> {t("llmWiki.ingest")}
-              </Button>
-            </Card>
-          )}
-
-          {lintResult && (
-            <Card className="stack">
-              <h2>{t("llmWiki.health")}</h2>
-              <ul className="plain-list">
-                {lintResult.findings.map((finding) => <li key={finding}>{finding}</li>)}
-                {!lintResult.findings.length && <li>{t("llmWiki.noFindings")}</li>}
-              </ul>
-              {lintResult.notes && <div className="markdown compact-markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(lintResult.notes) }} />}
-            </Card>
-          )}
-        </div>
       </div>
     </div>
   );
 }
-
