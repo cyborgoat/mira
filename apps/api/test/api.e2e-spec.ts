@@ -16,18 +16,21 @@ describe("Mira Nest API", () => {
   const dbPath = join(apiRoot, "tmp", "test.sqlite");
   const wikiRoot = join(apiRoot, "tmp", "wiki");
   const workspaceRoot = join(apiRoot, "tmp", "workspace");
+  const llmConfigRoot = join(apiRoot, "tmp", "llm-config");
 
   beforeAll(async () => {
     mkdirSync(join(apiRoot, "tmp"), { recursive: true });
     rmSync(dbPath, { force: true });
     rmSync(wikiRoot, { force: true, recursive: true });
     rmSync(workspaceRoot, { force: true, recursive: true });
+    rmSync(llmConfigRoot, { force: true, recursive: true });
     cpSync(join(repoRoot, "mira-workspace", "workspace"), workspaceRoot, { recursive: true });
     renameSync(join(workspaceRoot, "people", TEST_USER_IDS.alex), join(workspaceRoot, "people", "alex-chen"));
     process.env.MIRA_DATABASE_URL = `file:${dbPath}`;
     process.env.DATABASE_URL = `file:${dbPath}`;
     process.env.MIRA_WIKI_ROOT = wikiRoot;
     process.env.MIRA_WORKSPACE_ROOT = workspaceRoot;
+    process.env.MIRA_LLM_CONFIG_ROOT = llmConfigRoot;
     process.env.MIRA_JWT_SECRET = "test-secret";
 
     await seedTestDb(dbPath, "password123");
@@ -48,6 +51,7 @@ describe("Mira Nest API", () => {
     rmSync(dbPath, { force: true });
     rmSync(wikiRoot, { force: true, recursive: true });
     rmSync(workspaceRoot, { force: true, recursive: true });
+    rmSync(llmConfigRoot, { force: true, recursive: true });
   });
 
   afterEach(() => {
@@ -58,8 +62,10 @@ describe("Mira Nest API", () => {
     delete process.env.MIRA_AI_MODEL;
     delete process.env.MIRA_AI_TIMEOUT_MS;
     delete process.env.MIRA_AI_PROXY;
+    rmSync(llmConfigRoot, { force: true, recursive: true });
     process.env.MIRA_WIKI_ROOT = wikiRoot;
     process.env.MIRA_WORKSPACE_ROOT = workspaceRoot;
+    process.env.MIRA_LLM_CONFIG_ROOT = llmConfigRoot;
   });
 
   it("logs in with the initial superuser", async () => {
@@ -87,6 +93,94 @@ describe("Mira Nest API", () => {
       .expect(201);
 
     await request(app.getHttpServer()).delete(`/team/nodes/${manager.body.id}`).set("Authorization", `Bearer ${token}`).expect(409);
+  });
+
+  it("lets each user manage redacted personal LLM configuration", async () => {
+    const managerLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "manager@mira.local", password: "password123" })
+      .expect(201);
+    const managerToken = managerLogin.body.accessToken;
+
+    const managerDefaults = await request(app.getHttpServer())
+      .get("/me/settings/llm-config")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    expect(managerDefaults.body.hasApiKey).toBe(false);
+
+    const saved = await request(app.getHttpServer())
+      .patch("/me/settings/llm-config")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        provider: "openrouter",
+        apiKey: "saved-key",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openrouter/test-model",
+        maxTokens: 1234,
+        timeoutMs: 5000,
+        proxy: "off",
+      })
+      .expect(200);
+
+    expect(saved.body).toMatchObject({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openrouter/test-model",
+      maxTokens: 1234,
+      timeoutMs: 5000,
+      proxy: "off",
+      hasApiKey: true,
+      source: "file",
+    });
+    expect(saved.body.apiKey).toBeUndefined();
+    expect(readFileSync(join(llmConfigRoot, `${TEST_USER_IDS.manager}.json`), "utf8")).toContain("saved-key");
+
+    const adminConfig = await request(app.getHttpServer())
+      .get("/me/settings/llm-config")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(adminConfig.body.hasApiKey).toBe(false);
+
+    process.env.MIRA_AI_PROVIDER = "openai";
+    process.env.MIRA_AI_API_KEY = "env-key";
+    process.env.MIRA_AI_BASE_URL = "https://env.example/v1";
+    process.env.MIRA_AI_MODEL = "env-model";
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              summary: "Configured from settings.",
+              files: [{ path: "index.md", content: "# Index\n\nConfigured." }],
+              logEntry: "settings-config",
+            }),
+          },
+        }],
+      }),
+    } as Response);
+
+    await request(app.getHttpServer())
+      .post("/me/llm-wiki/generate")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ period: "monthly", scope: "personal", language: "en" })
+      .expect(201);
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).headers).toMatchObject({ Authorization: "Bearer saved-key" });
+
+    const cleared = await request(app.getHttpServer())
+      .patch("/me/settings/llm-config")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ clearApiKey: true })
+      .expect(200);
+    expect(cleared.body.hasApiKey).toBe(false);
+
+    await request(app.getHttpServer())
+      .post("/me/llm-wiki/generate")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ period: "monthly", scope: "personal", language: "en" })
+      .expect(503);
   });
 
   it("creates work records and aggregates team view", async () => {

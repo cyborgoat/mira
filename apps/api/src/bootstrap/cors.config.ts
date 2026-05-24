@@ -11,8 +11,11 @@ export const parseCorsOrigins = (config: ConfigService): string[] =>
 const isLocalhostLike = (origin: string) =>
   /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin);
 
+const isTauriOrigin = (origin: string) =>
+  origin === "tauri://localhost" || origin === "http://tauri.localhost" || origin === "https://tauri.localhost";
+
 const isAllowedOrigin = (origin: string, allowed: string[]) => {
-  return allowed.includes(origin) || isLocalhostLike(origin);
+  return allowed.includes(origin) || isLocalhostLike(origin) || isTauriOrigin(origin);
 };
 
 export const configureCors = (app: INestApplication, config: ConfigService) => {

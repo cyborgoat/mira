@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import type { MeetingNote, Period, Task, TaskPriority, TaskStatus, TeamNode, User, WorkView, LlmWikiOverview, LlmWikiOwner, LlmWikiPeriod, LlmWikiScope, LlmWikiReferenceStats, LlmWikiIngestResult, LlmWikiLintResult, LlmWikiPageContent, LlmWikiSource, LlmWikiPage, AskMiraResult, ViewMode, WorkspaceExport } from "./types";
+import type { MeetingNote, Period, Task, TaskPriority, TaskStatus, TeamNode, User, WorkView, LlmWikiOverview, LlmWikiOwner, LlmWikiPeriod, LlmWikiScope, LlmWikiReferenceStats, LlmWikiIngestResult, LlmWikiLintResult, LlmWikiPageContent, LlmWikiSource, LlmWikiPage, AskMiraResult, ViewMode, WorkspaceExport, LlmConfig, UpdateLlmConfigPayload } from "./types";
 import i18n from "@/i18n";
 import { errorMessage, parseWorkspaceExport, sortNodesForDelete, sortNodesForImport, downloadJson } from "./helpers";
 
-const API_URL = import.meta.env.VITE_MIRA_API_URL ?? "http://127.0.0.1:8000";
+const API_URL = import.meta.env.VITE_MIRA_API_URL ?? (window.__TAURI_INTERNALS__ ? "http://127.0.0.1:8173" : "http://127.0.0.1:8000");
 const TOKEN_KEY = "mira-api-token-v1";
 
 export type MiraApi = {
@@ -42,6 +42,8 @@ export type MiraApi = {
   createTeamNode: (payload: { name: string; title?: string; parentId?: string }) => Promise<void>;
   updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => Promise<void>;
   deleteTeamNode: (id: string) => Promise<void>;
+  loadLlmConfig: () => Promise<LlmConfig>;
+  updateLlmConfig: (payload: UpdateLlmConfigPayload) => Promise<LlmConfig>;
   exportWorkspace: () => Promise<void>;
   importWorkspace: (file: File | undefined) => Promise<void>;
   resetWorkspace: () => Promise<void>;
@@ -262,6 +264,8 @@ export function useMiraApi(): MiraApi {
     createTeamNode: (payload) => mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
     updateTeamNode: (id, payload) => mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteTeamNode: (id) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),
+    loadLlmConfig: () => request<LlmConfig>("/me/settings/llm-config"),
+    updateLlmConfig: (payload) => request<LlmConfig>("/me/settings/llm-config", { method: "PATCH", body: JSON.stringify(payload) }),
     exportWorkspace,
     importWorkspace,
     resetWorkspace,

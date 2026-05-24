@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Download, GitFork, KeyRound, Plus, Save, Trash2, Upload, UserRound } from "lucide-react";
+import { Bot, Download, GitFork, KeyRound, Plus, Save, Trash2, Upload, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { MeetingNote, SettingsTab, Task, TeamNode, User, WorkView } from "../types";
+import type { LlmConfig, LlmProvider, SettingsTab, TeamNode, UpdateLlmConfigPayload, User, WorkView } from "../types";
 import { InlineStats, LanguageSelect } from "../shared";
 import { buildStats, nodePath } from "../helpers";
 
@@ -19,6 +19,8 @@ type SettingsViewProps = {
   onCreate: (payload: { name: string; title?: string; parentId?: string }) => Promise<void>;
   onUpdate: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onLoadLlmConfig: () => Promise<LlmConfig>;
+  onUpdateLlmConfig: (payload: UpdateLlmConfigPayload) => Promise<LlmConfig>;
   onExport: () => Promise<void>;
   onImport: (file: File | undefined) => Promise<void>;
   onReset: () => Promise<void>;
@@ -33,6 +35,8 @@ export function SettingsView({
   onCreate,
   onUpdate,
   onDelete,
+  onLoadLlmConfig,
+  onUpdateLlmConfig,
   onExport,
   onImport,
   onReset,
@@ -43,6 +47,7 @@ export function SettingsView({
   const tabs: Array<{ key: SettingsTab; label: string; icon: React.ComponentType<{ size?: number }> }> = [
     { key: "account", label: t("settings.account"), icon: UserRound },
     { key: "security", label: t("settings.password"), icon: KeyRound },
+    { key: "llm", label: t("settings.llmConfig"), icon: Bot },
     ...(user.canManageSettings ? [{ key: "team" as SettingsTab, label: t("settings.teamTree"), icon: GitFork }] : []),
   ];
 
@@ -82,6 +87,7 @@ export function SettingsView({
             teamView={teamView}
           />
         )}
+        {activeTab === "llm" && <LlmSettingsPanel onLoad={onLoadLlmConfig} onSubmit={onUpdateLlmConfig} />}
       </div>
     </div>
   );
@@ -293,6 +299,175 @@ function TeamManagementTab({
   );
 }
 
+const providerDefaults: Record<LlmProvider, { baseUrl: string; model: string }> = {
+  openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-5.2" },
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", model: "gpt-5.2" },
+  anthropic: { baseUrl: "https://api.anthropic.com", model: "claude-3-5-sonnet-latest" },
+  "custom-openai-compatible": { baseUrl: "https://api.openai.com/v1", model: "gpt-5.2" },
+};
+
+function LlmSettingsPanel({ onLoad, onSubmit }: { onLoad: () => Promise<LlmConfig>; onSubmit: (payload: UpdateLlmConfigPayload) => Promise<LlmConfig> }) {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState<LlmConfig | null>(null);
+  const [draft, setDraft] = useState({
+    provider: "openai" as LlmProvider,
+    baseUrl: "",
+    model: "",
+    apiKey: "",
+    maxTokens: 4000,
+    timeoutMs: 45000,
+    proxy: "",
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [manuallyEditedEndpoint, setManuallyEditedEndpoint] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    void onLoad()
+      .then((next) => {
+        if (cancelled) return;
+        setConfig(next);
+        setDraft({
+          provider: next.provider,
+          baseUrl: next.baseUrl,
+          model: next.model,
+          apiKey: "",
+          maxTokens: next.maxTokens,
+          timeoutMs: next.timeoutMs,
+          proxy: next.proxy,
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : t("errors.generic"));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [onLoad, t]);
+
+  const setProvider = (provider: LlmProvider) => {
+    const defaults = providerDefaults[provider];
+    setDraft((current) => ({
+      ...current,
+      provider,
+      baseUrl: manuallyEditedEndpoint ? current.baseUrl : defaults.baseUrl,
+      model: manuallyEditedEndpoint ? current.model : defaults.model,
+    }));
+  };
+
+  const save = async (clearApiKey = false) => {
+    setSaving(true);
+    setSaved(false);
+    setError("");
+    try {
+      const next = await onSubmit({
+        provider: draft.provider,
+        baseUrl: draft.baseUrl,
+        model: draft.model,
+        maxTokens: draft.maxTokens,
+        timeoutMs: draft.timeoutMs,
+        proxy: draft.proxy,
+        ...(draft.apiKey.trim() ? { apiKey: draft.apiKey.trim() } : {}),
+        ...(clearApiKey ? { clearApiKey: true } : {}),
+      });
+      setConfig(next);
+      setDraft({ ...draft, apiKey: "" });
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("errors.generic"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="stack settings-panel llm-settings-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>{t("settings.llmConfig")}</h2>
+          <p className="muted">{t("settings.llmConfigHelp")}</p>
+        </div>
+        <Badge>{config?.hasApiKey ? t("settings.apiKeyConfigured") : t("settings.apiKeyMissing")}</Badge>
+      </div>
+      {loading ? (
+        <p className="muted">{t("settings.loadingLlmConfig")}</p>
+      ) : (
+        <>
+          <div className="settings-form llm-settings-form">
+            <label className="field">
+              <span>{t("settings.provider")}</span>
+              <Select value={draft.provider} onValueChange={(value) => setProvider(value as LlmProvider)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                  <SelectItem value="openrouter">OpenRouter</SelectItem>
+                  <SelectItem value="anthropic">Anthropic</SelectItem>
+                  <SelectItem value="custom-openai-compatible">{t("settings.customProvider")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+            <label className="field">
+              <span>{t("settings.model")}</span>
+              <Input value={draft.model} onChange={(event) => { setManuallyEditedEndpoint(true); setDraft({ ...draft, model: event.target.value }); }} />
+            </label>
+            <label className="field">
+              <span>{t("settings.baseUrl")}</span>
+              <Input value={draft.baseUrl} onChange={(event) => { setManuallyEditedEndpoint(true); setDraft({ ...draft, baseUrl: event.target.value }); }} />
+            </label>
+            <label className="field">
+              <span>{t("settings.apiKey")}</span>
+              <Input
+                type="password"
+                value={draft.apiKey}
+                placeholder={config?.hasApiKey ? t("settings.apiKeyKeepPlaceholder") : t("settings.apiKeyNewPlaceholder")}
+                onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              <span>{t("settings.maxTokens")}</span>
+              <Input type="number" min={1} value={draft.maxTokens} onChange={(event) => setDraft({ ...draft, maxTokens: Number(event.target.value) })} />
+            </label>
+            <label className="field">
+              <span>{t("settings.timeoutMs")}</span>
+              <Input type="number" min={1000} value={draft.timeoutMs} onChange={(event) => setDraft({ ...draft, timeoutMs: Number(event.target.value) })} />
+            </label>
+            <label className="field">
+              <span>{t("settings.proxy")}</span>
+              <Input value={draft.proxy} placeholder={t("settings.proxyPlaceholder")} onChange={(event) => setDraft({ ...draft, proxy: event.target.value })} />
+            </label>
+            <div className="settings-meta">
+              <span>{t("settings.configSource")}</span>
+              <strong>{config ? t(`settings.configSources.${config.source}`) : t("common.unknown")}</strong>
+            </div>
+          </div>
+          {error && <div className="form-inline-error">{error}</div>}
+          <div className="row-between">
+            <span className="muted">{saved ? t("settings.llmConfigSaved") : t("settings.llmConfigNote")}</span>
+            <div className="row tool-row">
+              {config?.hasApiKey && (
+                <Button type="button" variant="ghost" disabled={saving} onClick={() => void save(true)}>
+                  <Trash2 size={15} /> {t("settings.clearApiKey")}
+                </Button>
+              )}
+              <Button type="button" disabled={saving || !draft.baseUrl.trim() || !draft.model.trim()} onClick={() => void save(false)}>
+                <Save size={15} /> {saving ? t("settings.savingLlmConfig") : t("settings.saveLlmConfig")}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function buildTreeRows(nodes: TeamNode[]) {
   const byParent = new Map<string, TeamNode[]>();
   for (const node of nodes) byParent.set(node.parentId ?? "root", [...(byParent.get(node.parentId ?? "root") ?? []), node]);
@@ -311,4 +486,3 @@ function buildTreeRows(nodes: TeamNode[]) {
 function confirmAction(message: string, action: () => void | Promise<void>) {
   if (window.confirm(message)) void action();
 }
-

@@ -11,7 +11,7 @@ The current app uses a NestJS API, SQLite via Prisma, and a React/Vite frontend.
 - **Notes**: create Markdown notes, tag them, preview them, upload `.md`, `.markdown`, or `.txt` files, save edits, and delete notes.
 - **LLM Wiki**: generate and modify personal or team wiki pages from workspace records and uploaded source files. It is for wiki maintenance, not chat.
 - **Ask Mira**: the only LLM question-answering portal. It can answer from wiki pages, tasks, notes, source files, and team information, with source cards.
-- **Settings**: account profile, language, password, plus superuser team-tree and workspace JSON tools.
+- **Settings**: account profile, language, password, personal LLM configuration, plus superuser team-tree and workspace JSON tools.
 
 Personal/team scope is controlled from the top navbar. Personal view only shows the signed-in user's content. Team view is read-only and available when the user's team node has descendants.
 
@@ -77,7 +77,21 @@ Mira uses hash routes:
 
 The app starts without an AI key. Tasks, notes, stats, settings, and existing wiki browsing still work.
 
-To use LLM Wiki generation, source ingestion, linting, and Ask Mira answers, configure `apps/api/.env`:
+To use LLM Wiki generation, source ingestion, linting, and Ask Mira answers, sign in as any user and open:
+
+```text
+Settings -> LLM config
+```
+
+Saved LLM settings are written per user under:
+
+```text
+mira-workspace/config/llm/
+```
+
+These files can contain API keys and are ignored by git.
+
+`apps/api/.env` values remain available as a fallback for headless/server deployments:
 
 ```text
 MIRA_AI_PROVIDER=openai
@@ -125,12 +139,39 @@ Example source files for LLM Wiki uploads live in:
 mira-workspace/examples/llm-wiki/sources/
 ```
 
+## Desktop App
+
+Mira includes a Tauri desktop shell that launches the NestJS API as a local sidecar and loads the Vite frontend.
+
+Additional prerequisites:
+
+- Rust and Cargo
+- Tauri platform prerequisites for your OS
+
+Development:
+
+```bash
+npm run dev:desktop
+```
+
+Production builds:
+
+```bash
+npm run build:desktop
+npm run build:desktop:mac
+npm run build:desktop:windows
+npm run build:desktop:linux
+```
+
+The Tauri sidecar build generates platform-suffixed API binaries under `apps/web/src-tauri/binaries/`. Those generated binaries are ignored by git.
+
 ## Build And Test
 
 ```bash
 npm run build:api
 npm run test:api
 npm run build:web
+npm run build:desktop
 ```
 
 ## Architecture
@@ -178,3 +219,5 @@ mira-workspace/llm-wiki/
 ```
 
 Set `MIRA_DATABASE_URL`, `MIRA_WORKSPACE_ROOT`, or `MIRA_WIKI_ROOT` to move runtime data outside the repository. Use absolute paths for root overrides in `apps/api/.env`.
+
+Personal LLM provider settings are stored under `mira-workspace/config/llm/` by default. They can include API keys, so that directory is intentionally ignored.

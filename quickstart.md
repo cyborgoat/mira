@@ -115,7 +115,7 @@ Check:
 - Tasks and Notes work in personal mode.
 - LLM Wiki opens generated pages.
 - Ask Mira opens a chat screen.
-- Settings lets each user update account details and password.
+- Settings lets each user update account details, password, and personal LLM configuration.
 
 Direct routes:
 
@@ -130,9 +130,11 @@ http://localhost:5173/#settings
 
 ## Optional: Enable AI Features
 
-Without an AI key, the app still runs. LLM Wiki generation, source ingestion, linting, and Ask Mira answers need backend AI config.
+Without an AI key, the app still runs. LLM Wiki generation, source ingestion, linting, and Ask Mira answers need a provider configured for the signed-in user.
 
-Edit `apps/api/.env`:
+Open Settings, then use the LLM config tab to save a personal provider, API key, base URL, model, and request limits. Saved personal LLM config files live under `mira-workspace/config/llm/` and are ignored by git because they can contain API keys.
+
+For headless/server fallback config, edit `apps/api/.env`:
 
 ```text
 MIRA_AI_PROVIDER=openai
@@ -160,7 +162,7 @@ MIRA_AI_PROXY=off    # bypass proxy
 MIRA_AI_PROXY=http://127.0.0.1:7897
 ```
 
-Restart the API after changing `.env`.
+Restart the API after changing `.env`. Settings UI changes apply to that user's future AI requests without editing `.env`.
 
 Example upload files:
 

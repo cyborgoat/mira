@@ -29,15 +29,15 @@ npm run dev:web
 
 Check these flows:
 
-- sign in as `alex@mira.local` and confirm Settings only shows account and password tabs.
+- sign in as `alex@mira.local` and confirm Settings shows account, password, and personal LLM config tabs.
 - sign in as `manager@mira.local`, switch Personal/Team view, and confirm team view is read-only subordinate data.
 - sign in as `admin@mira.local` and confirm Settings adds the team tree tab and JSON workspace tools.
 - switch language between English and Chinese from login or Settings, then confirm navigation, task, note, stats, and settings labels update.
 - `#stats`: confirm metrics, weekly summary cards, export, and achievement cards change between personal and team view where available.
 - `#tasks`: add a task with priority and due date, filter it, edit it, complete it, search it, and delete it.
 - `#notes`: create a tagged note, edit Markdown, save it, upload a `.md` or `.txt` file, delete a note.
-- `#llm-wiki`: browse wiki pages, switch personal/team scope as `manager@mira.local`, upload an example source file, ingest/generate when `MIRA_AI_API_KEY` is configured, and edit a wiki page when allowed.
-- `#ask-mira`: ask a question after configuring `MIRA_AI_API_KEY`, confirm source cards appear, and open a source card.
+- `#llm-wiki`: browse wiki pages, switch personal/team scope as `manager@mira.local`, upload an example source file, configure a personal LLM provider or env fallback, ingest/generate, and edit a wiki page when allowed.
+- `#ask-mira`: ask a question after configuring a personal LLM provider or env fallback, confirm source cards appear, and open a source card.
 - Refresh the page and confirm records persist from the API.
 
 ## Planned Tests
@@ -69,8 +69,8 @@ Manual API smoke test:
 
 - `POST /auth/login` with `manager@mira.local`, `alex@mira.local`, and `admin@mira.local`.
 - confirm `/me/work` returns only the signed-in user's own tasks and notes.
-- confirm `/me/llm-wiki` returns wiki overviews and `/me/ask-mira` fails gracefully without backend AI config.
-- configure `MIRA_AI_API_KEY`, then confirm `/me/llm-wiki/generate`, `/me/llm-wiki/ingest`, and `/me/ask-mira` return scoped AI output with sources.
+- confirm `/me/llm-wiki` returns wiki overviews and `/me/ask-mira` fails gracefully without personal or fallback AI config.
+- configure `/me/settings/llm-config` for the signed-in user or set `MIRA_AI_API_KEY`, then confirm `/me/llm-wiki/generate`, `/me/llm-wiki/ingest`, and `/me/ask-mira` return scoped AI output with sources.
 - confirm `/me/profile` updates name, email, and role text, and `/me/password` changes login credentials after current-password verification.
 - confirm `/me/team-view` returns subordinate data for `manager@mira.local` and is unavailable to users without children.
 - confirm `/team/nodes`, `/tasks`, and `/notes` raw management endpoints require superuser access.

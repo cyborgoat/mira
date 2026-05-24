@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { LlmConfigService } from "../ai/llm-config.service";
 import { CurrentUser, AuthUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Period } from "../common/period";
@@ -7,13 +8,17 @@ import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
 import { AskMiraDto } from "./dto/ask-mira.dto";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
+import { UpdateLlmConfigDto } from "./dto/llm-config.dto";
 import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, LlmWikiScope, LlmWikiViewMode, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
 import { MeService } from "./me.service";
 
 @UseGuards(JwtAuthGuard)
 @Controller("me")
 export class MeController {
-  constructor(private readonly me: MeService) {}
+  constructor(
+    private readonly me: MeService,
+    private readonly llmConfig: LlmConfigService,
+  ) {}
 
   @Get("work")
   work(
@@ -39,6 +44,16 @@ export class MeController {
   @Patch("password")
   updatePassword(@CurrentUser() user: AuthUser, @Body() payload: UpdatePasswordDto) {
     return this.me.updatePassword(user, payload);
+  }
+
+  @Get("settings/llm-config")
+  llmConfigView(@CurrentUser() user: AuthUser) {
+    return this.llmConfig.view(user.id);
+  }
+
+  @Patch("settings/llm-config")
+  updateLlmConfig(@CurrentUser() user: AuthUser, @Body() payload: UpdateLlmConfigDto) {
+    return this.llmConfig.update(user.id, payload);
   }
 
   @Get("llm-wiki")

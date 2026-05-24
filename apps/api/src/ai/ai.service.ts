@@ -7,6 +7,7 @@ import * as https from "node:https";
 import * as net from "node:net";
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import * as tls from "node:tls";
+import { LlmConfigService, LlmProvider, ResolvedLlmConfig } from "./llm-config.service";
 
 export type LlmWikiLanguage = "en" | "zh";
 
@@ -75,7 +76,7 @@ export type LlmWikiReferenceStats = {
   resources: number;
 };
 
-type Provider = "openai" | "openrouter" | "anthropic" | "custom-openai-compatible";
+type Provider = LlmProvider;
 type OpenAiCompatibleChoice = {
   finish_reason?: string;
   message?: {
@@ -93,7 +94,10 @@ type WikiFileInstruction = {
 
 @Injectable()
 export class AiService {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly llmConfig: LlmConfigService,
+  ) {}
 
   async wikiOverview(userId: string): Promise<LlmWikiOverview> {
     const vault = await this.ensureVault(userId);
@@ -127,14 +131,14 @@ export class AiService {
     };
   }
 
-  async ingestWikiSource(userId: string, payload: { sourcePath: string; language: LlmWikiLanguage }): Promise<LlmWikiIngestResult> {
-    const vault = await this.ensureVault(userId);
+  async ingestWikiSource(vaultId: string, configUserId: string, payload: { sourcePath: string; language: LlmWikiLanguage }): Promise<LlmWikiIngestResult> {
+    const vault = await this.ensureVault(vaultId);
     const sourceFile = this.resolveRawPath(vault.rawDir, payload.sourcePath);
     if (!existsSync(sourceFile)) throw new NotFoundException("Source file not found");
     const sourceContent = await this.readLimited(sourceFile, this.sourcePromptChars());
     const context = await this.wikiContext(vault.wikiDir);
 
-    const parsed = await this.completeJson(this.wikiJsonSystem(), [
+    const parsed = await this.completeJson(configUserId, this.wikiJsonSystem(), [
       this.languageLine(payload.language),
       "Ingest the raw source into the persistent markdown wiki.",
       "Create or update durable wiki pages. Update index.md. Do not include hidden reasoning.",
@@ -160,10 +164,10 @@ export class AiService {
     };
   }
 
-  async ingestWikiContent(userId: string, payload: { sourceName: string; content: string; language: LlmWikiLanguage }): Promise<LlmWikiIngestResult> {
-    const vault = await this.ensureVault(userId);
+  async ingestWikiContent(vaultId: string, configUserId: string, payload: { sourceName: string; content: string; language: LlmWikiLanguage }): Promise<LlmWikiIngestResult> {
+    const vault = await this.ensureVault(vaultId);
     const context = await this.wikiContext(vault.wikiDir);
-    const parsed = await this.completeJson(this.wikiJsonSystem(), [
+    const parsed = await this.completeJson(configUserId, this.wikiJsonSystem(), [
       this.languageLine(payload.language),
       "Generate or refresh the persistent markdown wiki from the user's workspace tasks and notes.",
       "The workspace content is the default source of truth. Create or update durable wiki pages and update index.md.",
@@ -190,6 +194,7 @@ export class AiService {
   }
 
   async askFromSources(
+    configUserId: string,
     language: LlmWikiLanguage,
     question: string,
     sources: AskMiraSourceSummary[],
@@ -202,7 +207,7 @@ export class AiService {
       };
     }
     const renderedSources = sources.map((source) => `- [${source.id}] ${source.type} | ${source.title}\n${source.snippet}`);
-    const parsed = await this.completeJson(this.wikiJsonSystem(), [
+    const parsed = await this.completeJson(configUserId, this.wikiJsonSystem(), [
       this.languageLine(language),
       "Answer the user's question from the provided sources only.",
       "Cite relevant source IDs in markdown, using a format like [id].",
@@ -224,10 +229,10 @@ export class AiService {
     };
   }
 
-  async lintWiki(userId: string, payload: { language: LlmWikiLanguage }): Promise<LlmWikiLintResult> {
-    const vault = await this.ensureVault(userId);
+  async lintWiki(vaultId: string, configUserId: string, payload: { language: LlmWikiLanguage }): Promise<LlmWikiLintResult> {
+    const vault = await this.ensureVault(vaultId);
     const context = await this.wikiContext(vault.wikiDir, true);
-    const parsed = await this.completeJson(this.wikiJsonSystem(), [
+    const parsed = await this.completeJson(configUserId, this.wikiJsonSystem(), [
       this.languageLine(payload.language),
       "Health-check this persistent markdown wiki.",
       "Look for contradictions, stale claims, orphan pages, missing cross-references, missing pages for recurring concepts, and useful next sources.",
@@ -486,8 +491,8 @@ export class AiService {
     return typeof value === "string" ? value.trim() : "";
   }
 
-  private async completeJson(system: string, prompt: string) {
-    const text = await this.complete(system, prompt, true);
+  private async completeJson(configUserId: string, system: string, prompt: string) {
+    const text = await this.complete(configUserId, system, prompt, true);
     const trimmed = text.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
     try {
       return JSON.parse(trimmed) as Record<string, unknown>;
@@ -496,35 +501,31 @@ export class AiService {
     }
   }
 
-  private async complete(system: string, prompt: string, jsonMode: boolean) {
-    const provider = this.provider();
-    const apiKey = this.config.get<string>("MIRA_AI_API_KEY", "").trim();
+  private async complete(configUserId: string, system: string, prompt: string, jsonMode: boolean) {
+    const llmConfig = await this.llmConfig.resolve(configUserId);
+    const provider = llmConfig.provider;
+    const apiKey = llmConfig.apiKey;
     if (!apiKey) throw new ServiceUnavailableException("AI provider is not configured");
     return provider === "anthropic"
-      ? this.callAnthropic(apiKey, system, prompt)
-      : this.callOpenAiCompatible(provider, apiKey, system, prompt, jsonMode);
+      ? this.callAnthropic(llmConfig, system, prompt)
+      : this.callOpenAiCompatible(llmConfig, system, prompt, jsonMode);
   }
 
-  private provider(): Provider {
-    const value = this.configString("MIRA_AI_PROVIDER", "openai");
-    if (["openai", "openrouter", "anthropic", "custom-openai-compatible"].includes(value)) return value as Provider;
-    throw new ServiceUnavailableException(`Unsupported AI provider: ${value}`);
-  }
-
-  private async callOpenAiCompatible(provider: Provider, apiKey: string, system: string, prompt: string, jsonMode: boolean) {
-    const baseUrl = this.configString("MIRA_AI_BASE_URL", this.defaultBaseUrl(provider)).replace(/\/+$/, "");
+  private async callOpenAiCompatible(llmConfig: ResolvedLlmConfig, system: string, prompt: string, jsonMode: boolean) {
+    const provider = llmConfig.provider;
+    const baseUrl = llmConfig.baseUrl;
     const responseFormat = jsonMode && provider !== "openrouter" ? { response_format: { type: "json_object" } } : {};
     const reasoning = provider === "openrouter" ? { reasoning: { effort: "none", exclude: true }, include_reasoning: false } : {};
-    const response = await this.fetchJson(`${baseUrl}/chat/completions`, {
+    const response = await this.fetchJson(`${baseUrl}/chat/completions`, llmConfig, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${llmConfig.apiKey}`,
         ...(provider === "openrouter" ? this.openRouterHeaders() : {}),
       },
       body: JSON.stringify({
-        model: this.model(provider),
-        max_tokens: this.maxTokens(),
+        model: llmConfig.model,
+        max_tokens: llmConfig.maxTokens,
         temperature: 0.2,
         ...responseFormat,
         ...reasoning,
@@ -538,18 +539,17 @@ export class AiService {
     return this.extractOpenAiCompatibleText(response);
   }
 
-  private async callAnthropic(apiKey: string, system: string, prompt: string) {
-    const baseUrl = this.configString("MIRA_AI_BASE_URL", "https://api.anthropic.com").replace(/\/+$/, "");
-    const response = await this.fetchJson(`${baseUrl}/v1/messages`, {
+  private async callAnthropic(llmConfig: ResolvedLlmConfig, system: string, prompt: string) {
+    const response = await this.fetchJson(`${llmConfig.baseUrl}/v1/messages`, llmConfig, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": apiKey,
+        "x-api-key": llmConfig.apiKey,
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: this.model("anthropic"),
-        max_tokens: this.maxTokens(),
+        model: llmConfig.model,
+        max_tokens: llmConfig.maxTokens,
         temperature: 0.2,
         system,
         messages: [{ role: "user", content: prompt }],
@@ -561,12 +561,11 @@ export class AiService {
     return text;
   }
 
-  private async fetchJson(url: string, init: RequestInit) {
+  private async fetchJson(url: string, llmConfig: ResolvedLlmConfig, init: RequestInit) {
     const controller = new AbortController();
-    const timeoutMs = Number(this.config.get<string>("MIRA_AI_TIMEOUT_MS", "45000")) || 45000;
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), llmConfig.timeoutMs);
     try {
-      const response = await this.requestText(url, { ...init, signal: controller.signal });
+      const response = await this.requestText(url, llmConfig, { ...init, signal: controller.signal });
       const body = response.body;
       if (!response.ok) {
         const prefix = response.status === 401 || response.status === 403 ? "AI provider authentication failed" : "AI provider request failed";
@@ -586,16 +585,16 @@ export class AiService {
     }
   }
 
-  private async requestText(url: string, init: RequestInit) {
-    const proxyUrl = this.proxyUrl(url);
+  private async requestText(url: string, llmConfig: ResolvedLlmConfig, init: RequestInit) {
+    const proxyUrl = this.proxyUrl(url, llmConfig);
     if (proxyUrl) return this.requestTextViaProxy(url, init, proxyUrl);
     const response = await fetch(url, init);
     return { ok: response.ok, status: response.status, body: await response.text() };
   }
 
-  private proxyUrl(targetUrl: string) {
+  private proxyUrl(targetUrl: string, llmConfig: ResolvedLlmConfig) {
     const target = new URL(targetUrl);
-    const configured = this.config.get<string>("MIRA_AI_PROXY", "").trim();
+    const configured = llmConfig.proxy.trim();
     if (this.proxyDisabled(configured)) return "";
     if (configured) return configured;
     if (this.noProxyMatches(target.hostname)) return "";
@@ -707,19 +706,6 @@ export class AiService {
       result[key] = value;
     });
     return result;
-  }
-
-  private model(provider: Provider) {
-    return this.configString("MIRA_AI_MODEL", provider === "anthropic" ? "claude-3-5-sonnet-latest" : "gpt-5.2");
-  }
-
-  private maxTokens() {
-    return Number(this.config.get<string>("MIRA_AI_MAX_TOKENS", "4000")) || 4000;
-  }
-
-  private defaultBaseUrl(provider: Provider) {
-    if (provider === "openrouter") return "https://openrouter.ai/api/v1";
-    return "https://api.openai.com/v1";
   }
 
   private openRouterHeaders() {

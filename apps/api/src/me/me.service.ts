@@ -156,7 +156,7 @@ export class MeService {
   }
 
   ingestLlmWikiSource(user: AuthUser, payload: IngestLlmWikiSourceDto) {
-    return this.ai.ingestWikiSource(this.editableWikiVaultId(user, payload.view), payload);
+    return this.ai.ingestWikiSource(this.editableWikiVaultId(user, payload.view), user.id, payload);
   }
 
   async llmWikiReferenceStats(
@@ -193,7 +193,7 @@ export class MeService {
       this.content.listNotes({ nodeIds }),
     ]);
     const filtered = this.filterWikiPeriod(tasks, notes, payload.period);
-    const result = await this.ai.ingestWikiContent(this.editableWikiVaultId(user, scope === "team" ? "team" : "personal"), {
+    const result = await this.ai.ingestWikiContent(this.editableWikiVaultId(user, scope === "team" ? "team" : "personal"), user.id, {
       language: payload.language,
       sourceName: `workspace-${scope}-${payload.period}`,
       content: this.workspaceWikiSource(payload.period, scope, node?.name || user.email, filtered),
@@ -233,7 +233,7 @@ export class MeService {
       title: item.title,
       snippet: this.sourceSnippet(item.content, queryTerms),
     }));
-    const response = await this.ai.askFromSources(payload.language, question, topSources);
+    const response = await this.ai.askFromSources(user.id, payload.language, question, topSources);
     const usedIds = new Set(response.usedSourceIds);
     const returnedSources = hits
       .filter((item) => !usedIds.size || usedIds.has(item.sourceId))
@@ -256,7 +256,7 @@ export class MeService {
   }
 
   lintLlmWiki(user: AuthUser, payload: LintLlmWikiDto) {
-    return this.ai.lintWiki(this.editableWikiVaultId(user, payload.view), payload);
+    return this.ai.lintWiki(this.editableWikiVaultId(user, payload.view), user.id, payload);
   }
 
   async readLlmWikiPage(user: AuthUser, pagePath: string, options: { ownerId?: string; view?: LlmWikiViewMode; scope?: LlmWikiScope }) {

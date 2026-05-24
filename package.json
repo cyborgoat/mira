@@ -9,6 +9,11 @@
     "start:api": "npm --prefix apps/api run start",
     "build:api": "npm --prefix apps/api run build",
     "test:api": "npm --prefix apps/api run test",
-    "db:api": "npm --prefix apps/api run prisma:push"
+    "db:api": "npm --prefix apps/api run prisma:push",
+    "dev:desktop": "npm --prefix apps/web run dev:tauri",
+    "build:desktop": "npm --prefix apps/web run build:api-sidecar:host && npm --prefix apps/web run build:tauri",
+    "build:desktop:mac": "npm --prefix apps/web run build:api-sidecar:host && npm --prefix apps/web run build:tauri",
+    "build:desktop:windows": "npm --prefix apps/web run build:api-sidecar:all && npm --prefix apps/web run build:tauri -- --target x86_64-pc-windows-msvc",
+    "build:desktop:linux": "npm --prefix apps/web run build:api-sidecar:all && npm --prefix apps/web run build:tauri -- --target x86_64-unknown-linux-gnu"
   }
 }

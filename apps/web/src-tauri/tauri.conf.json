@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Mira",
+  "version": "0.1.0",
+  "identifier": "local.mira.desktop",
+  "build": {
+    "beforeDevCommand": "npm run build:api-sidecar:host && npm run dev",
+    "beforeBuildCommand": "npm run build:api-sidecar:host && npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Mira",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 980,
+        "minHeight": 680
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [],
+    "externalBin": [
+      "binaries/mira-api"
+    ]
+  }
+}

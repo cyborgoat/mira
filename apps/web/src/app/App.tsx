@@ -185,6 +185,8 @@ export function App() {
               onCreate={api.createTeamNode}
               onUpdate={api.updateTeamNode}
               onDelete={api.deleteTeamNode}
+              onLoadLlmConfig={api.loadLlmConfig}
+              onUpdateLlmConfig={api.updateLlmConfig}
               onExport={api.exportWorkspace}
               onImport={api.importWorkspace}
               onReset={api.resetWorkspace}

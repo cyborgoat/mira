@@ -442,6 +442,10 @@ label strong {
   max-width: 760px;
 }
 
+.llm-settings-panel {
+  max-width: 900px;
+}
+
 .panel-heading {
   display: flex;
   align-items: flex-start;
@@ -466,6 +470,11 @@ label strong {
 .settings-form .field:first-child,
 .settings-form .field:nth-child(3) {
   grid-column: 1 / -1;
+}
+
+.llm-settings-form .field:first-child,
+.llm-settings-form .field:nth-child(3) {
+  grid-column: auto;
 }
 
 .settings-meta {

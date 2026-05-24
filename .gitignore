@@ -151,6 +151,11 @@ __pycache__/
 # Mira local-first runtime scratch files
 apps/api/tmp/
 apps/api/prisma/tmp/
+apps/mira-workspace/
+apps/web/src-tauri/binaries/mira-api-*
+apps/web/src-tauri/gen/
+apps/web/src-tauri/target/
+mira-workspace/config/llm/
 *.sqlite
 *.sqlite3
 !mira-workspace/**/*.sqlite

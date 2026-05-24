@@ -6,7 +6,8 @@ export type Period = "daily" | "weekly" | "monthly";
 export type LlmWikiPeriod = Period | "historical";
 export type LlmWikiScope = "personal" | "team";
 export type LlmWikiTarget = "team" | string;
-export type SettingsTab = "account" | "security" | "team";
+export type SettingsTab = "account" | "security" | "team" | "llm";
+export type LlmProvider = "openai" | "openrouter" | "anthropic" | "custom-openai-compatible";
 export type AskMiraSourceType = "wiki" | "wiki-index" | "wiki-page" | "task" | "note" | "team-member";
 
 export type TeamNode = {
@@ -73,6 +74,22 @@ export type WorkspaceExport = {
   teamNodes: TeamNode[];
   tasks: Task[];
   notes: MeetingNote[];
+};
+
+export type LlmConfig = {
+  provider: LlmProvider;
+  baseUrl: string;
+  model: string;
+  maxTokens: number;
+  timeoutMs: number;
+  proxy: string;
+  hasApiKey: boolean;
+  source: "file" | "env" | "defaults";
+};
+
+export type UpdateLlmConfigPayload = Partial<Pick<LlmConfig, "provider" | "baseUrl" | "model" | "maxTokens" | "timeoutMs" | "proxy">> & {
+  apiKey?: string;
+  clearApiKey?: boolean;
 };
 
 export type LlmWikiSource = {
