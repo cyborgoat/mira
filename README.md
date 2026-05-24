@@ -21,12 +21,12 @@ Prerequisites:
 
 - Node.js 20 or newer
 - npm
+- Rust and Cargo for Tauri dependencies
 
 From a fresh clone:
 
 ```bash
-npm --prefix apps/api install
-npm --prefix apps/web install
+npm run install
 cp apps/api/.env.example apps/api/.env
 npm run db:api
 ```

@@ -6,6 +6,7 @@ This guide starts Mira from a fresh clone with local SQLite, seeded demo users, 
 
 - Node.js 20 or newer
 - npm
+- Rust and Cargo for Tauri dependencies
 
 Check versions:
 
@@ -19,8 +20,7 @@ npm --version
 From the repository root:
 
 ```bash
-npm --prefix apps/api install
-npm --prefix apps/web install
+npm run install
 ```
 
 ## 2. Create Local API Environment

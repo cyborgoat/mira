@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "install": "npm --prefix apps/api install && npm --prefix apps/web install && cargo fetch --manifest-path apps/web/src-tauri/Cargo.toml",
     "dev:web": "npm --prefix apps/web run dev",
     "build:web": "npm --prefix apps/web run build",
     "dev:api": "npm --prefix apps/api run dev",
