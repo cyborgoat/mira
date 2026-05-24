@@ -26,7 +26,7 @@ Prerequisites:
 From a fresh clone:
 
 ```bash
-npm run install
+npm install
 cp apps/api/.env.example apps/api/.env
 npm run db:api
 ```

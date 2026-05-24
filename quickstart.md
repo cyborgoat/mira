@@ -20,7 +20,7 @@ npm --version
 From the repository root:
 
 ```bash
-npm run install
+npm install
 ```
 
 ## 2. Create Local API Environment

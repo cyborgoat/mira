@@ -7,7 +7,7 @@ The frontend is API-backed, and the NestJS backend has its own build and API tes
 Install dependencies:
 
 ```bash
-npm run install
+npm install
 ```
 
 Run the production build:
@@ -55,7 +55,7 @@ Check these flows:
 Install dependencies:
 
 ```bash
-npm run install
+npm install
 ```
 
 Run the backend build and tests:
