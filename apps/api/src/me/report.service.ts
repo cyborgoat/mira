@@ -132,47 +132,45 @@ export class ReportService {
   }
 
   async generateReport(user: AuthUser, payload: GenerateReportDto) {
-    const scope = await this.resolveScope(user, payload.scope);
-    const nodeIds = await this.resolveNodeIds(user, scope);
-    const ownerNames = await this.ownerNameMap(nodeIds);
-
-    const [tasks, notes] = await Promise.all([
-      this.content.listTasks({ nodeIds }),
-      this.content.listNotes({ nodeIds }),
-    ]);
-
-    const filtered = filterByPeriod(tasks, notes, payload.period);
-    const taskIdSet = payload.includedTaskIds?.length ? new Set(payload.includedTaskIds) : null;
-    const noteIdSet = payload.includedNoteIds?.length ? new Set(payload.includedNoteIds) : null;
-
-    const selectedTasks = taskIdSet ? filtered.tasks.filter((task) => taskIdSet.has(task.id)) : filtered.tasks;
-    const selectedNotes = noteIdSet ? filtered.notes.filter((note) => noteIdSet.has(note.id)) : filtered.notes;
-
-    const start = periodStart(payload.period);
-    const end = new Date();
-    const completedTasks = selectedTasks.filter((task) => task.status === "complete" && task.completedAt && new Date(task.completedAt) >= start);
-    const openTasks = selectedTasks.filter((task) => task.status !== "complete");
-
-    const styleProfile = await this.readStyleProfile(user.id);
-    const periodLabel = this.periodLabel(payload.period, payload.language);
+    const selection = await this.gatherReportSelection(user, payload);
     const response = await this.ai.generateWorkReport(user.id, payload.language, {
       period: payload.period,
-      periodLabel,
-      dateRange: { start: start.toISOString(), end: end.toISOString() },
-      scope,
-      completedTasks: completedTasks.map((task) => this.toReportTask(task, ownerNames.get(task.ownerNodeId))),
-      openTasks: openTasks.map((task) => this.toReportTask(task, ownerNames.get(task.ownerNodeId))),
-      notes: selectedNotes.map((note) => this.toReportNote(note)),
-      styleProfile,
+      periodLabel: selection.periodLabel,
+      dateRange: { start: selection.start.toISOString(), end: selection.end.toISOString() },
+      scope: selection.scope,
+      completedTasks: selection.completedTasks.map((task) => this.toReportTask(task, selection.ownerNames.get(task.ownerNodeId))),
+      openTasks: selection.openTasks.map((task) => this.toReportTask(task, selection.ownerNames.get(task.ownerNodeId))),
+      notes: selection.selectedNotes.map((note) => this.toReportNote(note)),
+      styleProfile: selection.styleProfile,
       stylePreset: payload.stylePreset,
     });
 
-    const sources = this.buildSources(completedTasks, selectedNotes, response.usedSourceIds, ownerNames);
+    const sources = this.buildSources(selection.completedTasks, selection.selectedNotes, response.usedSourceIds, selection.ownerNames);
     return {
       answer: response.answer,
       sources,
       period: payload.period,
-      scope,
+      scope: selection.scope,
+    };
+  }
+
+  async assembleReport(user: AuthUser, payload: GenerateReportDto) {
+    const selection = await this.gatherReportSelection(user, payload);
+    const answer = this.buildAssembledReportMarkdown({
+      language: payload.language,
+      periodLabel: selection.periodLabel,
+      start: selection.start,
+      end: selection.end,
+      completedTasks: selection.completedTasks,
+      openTasks: selection.openTasks,
+      notes: selection.selectedNotes,
+    });
+    const sources = this.buildSources(selection.completedTasks, selection.selectedNotes, [], selection.ownerNames);
+    return {
+      answer,
+      sources,
+      period: payload.period,
+      scope: selection.scope,
     };
   }
 
@@ -203,6 +201,93 @@ export class ReportService {
       styleProfile,
       stylePreset: payload.stylePreset,
     });
+  }
+
+  private async gatherReportSelection(user: AuthUser, payload: GenerateReportDto) {
+    const scope = await this.resolveScope(user, payload.scope);
+    const nodeIds = await this.resolveNodeIds(user, scope);
+    const ownerNames = await this.ownerNameMap(nodeIds);
+
+    const [tasks, notes] = await Promise.all([
+      this.content.listTasks({ nodeIds }),
+      this.content.listNotes({ nodeIds }),
+    ]);
+
+    const filtered = filterByPeriod(tasks, notes, payload.period);
+    const taskIdSet = payload.includedTaskIds?.length ? new Set(payload.includedTaskIds) : null;
+    const noteIdSet = payload.includedNoteIds?.length ? new Set(payload.includedNoteIds) : null;
+
+    const selectedTasks = taskIdSet ? filtered.tasks.filter((task) => taskIdSet.has(task.id)) : filtered.tasks;
+    const selectedNotes = noteIdSet ? filtered.notes.filter((note) => noteIdSet.has(note.id)) : filtered.notes;
+
+    const start = periodStart(payload.period);
+    const end = new Date();
+    const completedTasks = selectedTasks.filter(
+      (task) => task.status === "complete" && task.completedAt && new Date(task.completedAt) >= start,
+    );
+    const openTasks = selectedTasks.filter((task) => task.status !== "complete");
+    const styleProfile = await this.readStyleProfile(user.id);
+
+    return {
+      scope,
+      ownerNames,
+      completedTasks,
+      openTasks,
+      selectedNotes,
+      start,
+      end,
+      periodLabel: this.periodLabel(payload.period, payload.language),
+      styleProfile,
+    };
+  }
+
+  private buildAssembledReportMarkdown(payload: {
+    language: "en" | "zh";
+    periodLabel: string;
+    start: Date;
+    end: Date;
+    completedTasks: WorkspaceTask[];
+    openTasks: WorkspaceTask[];
+    notes: WorkspaceNote[];
+  }) {
+    const zh = payload.language === "zh";
+    const formatDate = (value: Date) => value.toISOString().slice(0, 10);
+    const lines = [
+      `# ${payload.periodLabel} (${formatDate(payload.start)} – ${formatDate(payload.end)})`,
+      "",
+      zh ? "## 已完成工作" : "## Completed work",
+    ];
+
+    if (payload.completedTasks.length) {
+      for (const task of payload.completedTasks) {
+        const excerpt = task.details.trim().slice(0, 200);
+        lines.push(`- **${task.title}**${excerpt ? ` — ${excerpt}` : ""}`);
+      }
+    } else {
+      lines.push(zh ? "- _未选择已完成任务_" : "- _No completed tasks selected_");
+    }
+
+    lines.push("", zh ? "## 进行中" : "## In progress");
+    if (payload.openTasks.length) {
+      for (const task of payload.openTasks) {
+        const excerpt = task.details.trim().slice(0, 200);
+        lines.push(`- **${task.title}**${excerpt ? ` — ${excerpt}` : ""}`);
+      }
+    } else {
+      lines.push(zh ? "- _未选择进行中任务_" : "- _No in-progress tasks selected_");
+    }
+
+    lines.push("", zh ? "## 笔记" : "## Notes");
+    if (payload.notes.length) {
+      for (const note of payload.notes) {
+        const excerpt = note.content.trim().slice(0, 200);
+        lines.push(`- **${note.title}**: ${excerpt || note.title}`);
+      }
+    } else {
+      lines.push(zh ? "- _未选择笔记_" : "- _No notes selected_");
+    }
+
+    return lines.join("\n");
   }
 
   private async resolveScope(user: AuthUser, requested?: ReportScope): Promise<ReportScope> {

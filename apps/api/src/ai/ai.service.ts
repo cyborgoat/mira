@@ -1,5 +1,6 @@
-import { BadGatewayException, BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { BadGatewayException, BadRequestException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { AiRequestContextService } from "./ai-request-context.service";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
@@ -138,7 +139,15 @@ export class AiService {
   constructor(
     private readonly config: ConfigService,
     private readonly llmConfig: LlmConfigService,
+    private readonly aiContext: AiRequestContextService,
   ) {}
+
+  private assertManualAiAllowed() {
+    const required = this.config.get<string>("MIRA_AI_REQUIRE_MANUAL_HEADER") === "true";
+    if (required && !this.aiContext.isManual()) {
+      throw new ForbiddenException("AI requests require explicit user intent");
+    }
+  }
 
   async wikiOverview(userId: string): Promise<LlmWikiOverview> {
     const vault = await this.ensureVault(userId);
@@ -779,6 +788,7 @@ export class AiService {
   }
 
   private async complete(configUserId: string, system: string, prompt: string, jsonMode: boolean) {
+    this.assertManualAiAllowed();
     const llmConfig = await this.llmConfig.resolve(configUserId);
     const provider = llmConfig.provider;
     const apiKey = llmConfig.apiKey;

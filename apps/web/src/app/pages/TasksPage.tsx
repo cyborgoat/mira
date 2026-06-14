@@ -2,71 +2,87 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { recordTaskPhrase, resolveLocalSuggestion, type LocalSuggestion } from "../localSuggestions";
 import { TasksAiRefinePanel } from "./TasksAiRefinePanel";
 import { sortTasksByPriority, TaskRow } from "./TaskRow";
-import type { Task, TaskPriority, TaskRefineMessage, TaskRefineResult } from "../types";
+import type { LocalTaskSuggestion, Task, TaskPriority, TaskRefineMessage, TaskRefineResult } from "../types";
 
 type TasksViewProps = {
   tasks: Task[];
   isManager: boolean;
   onCreate: (payload: { title: string; details: string; priority: TaskPriority; dueDate?: string }) => Promise<void>;
   onUpdate: (id: string, payload: { status?: Task["status"] }) => Promise<void>;
+  onLoadLocalSuggestion: () => Promise<LocalTaskSuggestion>;
   onRefineTasks: (payload: { language: "en" | "zh"; scope?: "personal" | "team"; messages: TaskRefineMessage[] }) => Promise<TaskRefineResult>;
 };
 
-export function TasksView({ tasks, isManager, onCreate, onUpdate, onRefineTasks }: TasksViewProps) {
+export function TasksView({ tasks, isManager, onCreate, onUpdate, onLoadLocalSuggestion, onRefineTasks }: TasksViewProps) {
   const { t, i18n } = useTranslation();
   const language: "en" | "zh" = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
 
   const [quickTitle, setQuickTitle] = useState("");
-  const [suggestion, setSuggestion] = useState<{ title: string; details?: string } | null>(null);
+  const [suggestion, setSuggestion] = useState<LocalSuggestion | null>(null);
   const [suggestionLoading, setSuggestionLoading] = useState(false);
+  const [aiSuggestLoading, setAiSuggestLoading] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
   const suggestionRef = useRef<HTMLButtonElement>(null);
 
   const openTasks = sortTasksByPriority(tasks.filter((task) => task.status !== "complete"));
 
-  const loadSuggestion = useCallback(async () => {
+  const loadLocalSuggestion = useCallback(async () => {
     setSuggestionLoading(true);
+    try {
+      const next = await resolveLocalSuggestion(tasks, onLoadLocalSuggestion);
+      setSuggestion(next);
+    } catch {
+      setSuggestion(null);
+    } finally {
+      setSuggestionLoading(false);
+    }
+  }, [onLoadLocalSuggestion, tasks]);
+
+  const loadAiSuggestion = useCallback(async () => {
+    setAiSuggestLoading(true);
     try {
       const result = await onRefineTasks({
         language,
         scope: "personal",
         messages: [{ role: "user", content: t("tasks.suggestionPrompt") }],
       });
-      setSuggestion(result.suggestions[0] ?? null);
-    } catch {
-      setSuggestion(null);
+      const next = result.suggestions[0];
+      if (next) setSuggestion({ ...next, source: "ai" });
     } finally {
-      setSuggestionLoading(false);
+      setAiSuggestLoading(false);
     }
   }, [language, onRefineTasks, t]);
 
   useEffect(() => {
     addInputRef.current?.focus();
-    void loadSuggestion();
-  }, [loadSuggestion]);
+    void loadLocalSuggestion();
+  }, [loadLocalSuggestion]);
 
   const handleQuickAdd = useCallback(
     async (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key !== "Enter") return;
       const title = quickTitle.trim();
       if (!title) return;
+      recordTaskPhrase(title);
       await onCreate({ title, details: "", priority: "normal" });
       setQuickTitle("");
-      void loadSuggestion();
+      void loadLocalSuggestion();
     },
-    [quickTitle, onCreate, loadSuggestion],
+    [quickTitle, onCreate, loadLocalSuggestion],
   );
 
   const acceptSuggestion = useCallback(async () => {
     if (!suggestion) return;
+    recordTaskPhrase(suggestion.title);
     await onCreate({ title: suggestion.title, details: suggestion.details ?? "", priority: "normal" });
     setSuggestion(null);
-    void loadSuggestion();
+    void loadLocalSuggestion();
     addInputRef.current?.focus();
-  }, [suggestion, onCreate, loadSuggestion]);
+  }, [suggestion, onCreate, loadLocalSuggestion]);
 
   const handleToggle = useCallback(
     (task: Task) => void onUpdate(task.id, { status: task.status === "complete" ? "open" : "complete" }),
@@ -81,12 +97,12 @@ export function TasksView({ tasks, isManager, onCreate, onUpdate, onRefineTasks 
       }
       if (e.key === "Escape" && suggestion) {
         setSuggestion(null);
-        void loadSuggestion();
+        void loadLocalSuggestion();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [acceptSuggestion, loadSuggestion, suggestion]);
+  }, [acceptSuggestion, loadLocalSuggestion, suggestion]);
 
   return (
     <div className={`tasks-input-shell${aiOpen ? " with-ai-refine" : ""}`}>
@@ -119,23 +135,36 @@ export function TasksView({ tasks, isManager, onCreate, onUpdate, onRefineTasks 
               />
             </div>
 
-            {(suggestion || suggestionLoading) && (
-              <button
-                ref={suggestionRef}
+            <div className="task-suggestion-row-wrap">
+              {(suggestion || suggestionLoading) && (
+                <button
+                  ref={suggestionRef}
+                  type="button"
+                  className="task-suggestion-row"
+                  disabled={suggestionLoading || !suggestion}
+                  onClick={() => void acceptSuggestion()}
+                >
+                  <div className="reminder-circle-ghost suggestion" />
+                  <span className="task-suggestion-text">
+                    {suggestionLoading
+                      ? t("tasks.suggestionLoading")
+                      : suggestion?.title ?? t("tasks.suggestionEmpty")}
+                  </span>
+                  {suggestion && <span className="task-suggestion-hint">{t("tasks.suggestionTabHint")}</span>}
+                </button>
+              )}
+              <Button
                 type="button"
-                className="task-suggestion-row"
-                disabled={suggestionLoading || !suggestion}
-                onClick={() => void acceptSuggestion()}
+                variant="ghost"
+                size="sm"
+                className="task-ai-suggest-btn"
+                disabled={aiSuggestLoading || suggestionLoading}
+                onClick={() => void loadAiSuggestion()}
+                title={t("tasks.aiSuggestTitle")}
               >
-                <div className="reminder-circle-ghost suggestion" />
-                <span className="task-suggestion-text">
-                  {suggestionLoading
-                    ? t("tasks.suggestionLoading")
-                    : suggestion?.title ?? t("tasks.suggestionEmpty")}
-                </span>
-                {suggestion && <span className="task-suggestion-hint">{t("tasks.suggestionTabHint")}</span>}
-              </button>
-            )}
+                <Sparkles size={14} /> {aiSuggestLoading ? t("tasks.aiSuggestLoading") : t("tasks.aiSuggest")}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -146,8 +175,9 @@ export function TasksView({ tasks, isManager, onCreate, onUpdate, onRefineTasks 
         isManager={isManager}
         onRefine={onRefineTasks}
         onAddSuggestion={async (item) => {
+          recordTaskPhrase(item.title);
           await onCreate({ title: item.title, details: item.details ?? "", priority: "normal" });
-          void loadSuggestion();
+          void loadLocalSuggestion();
         }}
       />
     </div>

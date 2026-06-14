@@ -17,6 +17,13 @@ import type {
 type ReportViewProps = {
   isManager: boolean;
   onLoadReportSources: (payload: { period: Period; scope?: "personal" | "team" }) => Promise<ReportSources>;
+  onAssembleReport: (payload: {
+    period: Period;
+    scope?: "personal" | "team";
+    language: "en" | "zh";
+    includedTaskIds?: string[];
+    includedNoteIds?: string[];
+  }) => Promise<ReportGenerateResult>;
   onGenerateReport: (payload: {
     period: Period;
     scope?: "personal" | "team";
@@ -61,7 +68,13 @@ const STYLE_PROMPTS: Record<ReportStylePreset, string> = {
   effort: "Highlight depth of effort, challenges overcome, and work invested.",
 };
 
-export function ReportView({ isManager, onLoadReportSources, onGenerateReport, onRefineReport }: ReportViewProps) {
+export function ReportView({
+  isManager,
+  onLoadReportSources,
+  onAssembleReport,
+  onGenerateReport,
+  onRefineReport,
+}: ReportViewProps) {
   const { t, i18n } = useTranslation();
   const language: "en" | "zh" = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
 
@@ -72,16 +85,19 @@ export function ReportView({ isManager, onLoadReportSources, onGenerateReport, o
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState(() => loadDraft("weekly"));
-  const [generating, setGenerating] = useState(false);
+  const [assembling, setAssembling] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
   const [styleLoading, setStyleLoading] = useState<ReportStylePreset | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const generateTimer = useRef<number | null>(null);
+  const assembleTimer = useRef<number | null>(null);
 
   const selectionKey = useMemo(
     () => `${period}:${scope}:${[...selectedTaskIds].sort().join(",")}:${[...selectedNoteIds].sort().join(",")}`,
     [period, scope, selectedTaskIds, selectedNoteIds],
   );
+
+  const hasSelection = selectedTaskIds.size + selectedNoteIds.size > 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -114,9 +130,26 @@ export function ReportView({ isManager, onLoadReportSources, onGenerateReport, o
     [period],
   );
 
-  const runGenerate = useCallback(async () => {
-    if (selectedTaskIds.size === 0 && selectedNoteIds.size === 0) return;
-    setGenerating(true);
+  const runAssemble = useCallback(async () => {
+    if (!hasSelection) return;
+    setAssembling(true);
+    try {
+      const result = await onAssembleReport({
+        period,
+        scope,
+        language,
+        includedTaskIds: [...selectedTaskIds],
+        includedNoteIds: [...selectedNoteIds],
+      });
+      handleDraftChange(result.answer);
+    } finally {
+      setAssembling(false);
+    }
+  }, [handleDraftChange, hasSelection, language, onAssembleReport, period, scope, selectedNoteIds, selectedTaskIds]);
+
+  const runAiGenerate = useCallback(async () => {
+    if (!hasSelection) return;
+    setAiGenerating(true);
     try {
       const result = await onGenerateReport({
         period,
@@ -127,20 +160,20 @@ export function ReportView({ isManager, onLoadReportSources, onGenerateReport, o
       });
       handleDraftChange(result.answer);
     } finally {
-      setGenerating(false);
+      setAiGenerating(false);
     }
-  }, [handleDraftChange, language, onGenerateReport, period, scope, selectedNoteIds, selectedTaskIds]);
+  }, [handleDraftChange, hasSelection, language, onGenerateReport, period, scope, selectedNoteIds, selectedTaskIds]);
 
   useEffect(() => {
-    if (sourcesLoading || selectedTaskIds.size + selectedNoteIds.size === 0) return;
-    if (generateTimer.current) window.clearTimeout(generateTimer.current);
-    generateTimer.current = window.setTimeout(() => {
-      void runGenerate();
+    if (sourcesLoading || !hasSelection) return;
+    if (assembleTimer.current) window.clearTimeout(assembleTimer.current);
+    assembleTimer.current = window.setTimeout(() => {
+      void runAssemble();
     }, 450);
     return () => {
-      if (generateTimer.current) window.clearTimeout(generateTimer.current);
+      if (assembleTimer.current) window.clearTimeout(assembleTimer.current);
     };
-  }, [selectionKey, sourcesLoading, runGenerate, selectedNoteIds.size, selectedTaskIds.size]);
+  }, [hasSelection, runAssemble, selectionKey, sourcesLoading]);
 
   const handlePeriodChange = (next: Period) => {
     saveDraft(period, draft);
@@ -256,10 +289,13 @@ export function ReportView({ isManager, onLoadReportSources, onGenerateReport, o
 
         <ReportPreview
           draft={draft}
-          generating={generating}
+          assembling={assembling}
+          aiGenerating={aiGenerating}
+          canGenerateAi={hasSelection}
           onDraftChange={handleDraftChange}
           onStyle={(preset) => void handleStyle(preset)}
           onOpenRefine={() => setAiOpen(true)}
+          onGenerateAi={() => void runAiGenerate()}
           styleLoading={styleLoading}
         />
       </div>

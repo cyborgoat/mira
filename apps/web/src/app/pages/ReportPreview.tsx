@@ -6,27 +6,53 @@ import type { ReportStylePreset } from "../types";
 
 type ReportPreviewProps = {
   draft: string;
-  generating: boolean;
+  assembling: boolean;
+  aiGenerating: boolean;
+  canGenerateAi: boolean;
   onDraftChange: (value: string) => void;
   onStyle: (preset: ReportStylePreset) => void;
   onOpenRefine: () => void;
+  onGenerateAi: () => void;
   styleLoading: ReportStylePreset | null;
 };
 
-export function ReportPreview({ draft, generating, onDraftChange, onStyle, onOpenRefine, styleLoading }: ReportPreviewProps) {
+export function ReportPreview({
+  draft,
+  assembling,
+  aiGenerating,
+  canGenerateAi,
+  onDraftChange,
+  onStyle,
+  onOpenRefine,
+  onGenerateAi,
+  styleLoading,
+}: ReportPreviewProps) {
   const { t } = useTranslation();
+  const loading = assembling || aiGenerating;
 
   return (
     <div className="report-preview-pane">
       <div className="report-preview-header">
         <span className="report-preview-label">{t("report.previewLabel")}</span>
-        <Button type="button" variant="ghost" size="sm" onClick={onOpenRefine} title={t("report.aiRefineTitle")}>
-          <Sparkles size={16} />
-        </Button>
+        <div className="report-preview-actions">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!canGenerateAi || loading}
+            onClick={onGenerateAi}
+            title={t("report.generateWithAi")}
+          >
+            <Sparkles size={15} /> {aiGenerating ? t("report.generatingWithAi") : t("report.generateWithAi")}
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onOpenRefine} title={t("report.aiRefineTitle")}>
+            <Sparkles size={16} />
+          </Button>
+        </div>
       </div>
 
       <div className="report-preview-body">
-        {generating && !draft && (
+        {loading && !draft && (
           <div className="clarify-loading">
             <span /><span /><span />
           </div>
@@ -37,7 +63,7 @@ export function ReportPreview({ draft, generating, onDraftChange, onStyle, onOpe
             dangerouslySetInnerHTML={{ __html: renderMarkdown(draft) }}
           />
         ) : (
-          !generating && <p className="muted">{t("report.previewEmpty")}</p>
+          !loading && <p className="muted">{t("report.previewEmpty")}</p>
         )}
       </div>
 

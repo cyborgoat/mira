@@ -2536,6 +2536,12 @@ label strong {
   justify-content: space-between;
 }
 
+.report-preview-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
 .report-preview-label {
   font-weight: 600;
 }
@@ -2584,6 +2590,21 @@ label strong {
 /* ── Tasks inline suggestion ───────────────────────────── */
 .tasks-list-card {
   max-width: 660px;
+}
+
+.task-suggestion-row-wrap {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.task-suggestion-row-wrap .task-suggestion-row {
+  flex: 1;
+}
+
+.task-ai-suggest-btn {
+  flex-shrink: 0;
 }
 
 .task-suggestion-row {

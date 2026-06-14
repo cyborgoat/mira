@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { MeetingNote, Period, Task, TaskPriority, TaskStatus, TeamNode, User, WorkView, WorkspaceExport, LlmConfig, UpdateLlmConfigPayload, ReportProfile, ReportGenerateResult, ReportColdStartResult, TaskRefineMessage, TaskRefineResult, ReportRefineMessage, ReportRefineResult, ReportSources, ReportStylePreset, WorkArchive } from "./types";
+import type { MeetingNote, Period, Task, TaskPriority, TaskStatus, TeamNode, User, WorkView, WorkspaceExport, LlmConfig, UpdateLlmConfigPayload, ReportProfile, ReportGenerateResult, ReportColdStartResult, TaskRefineMessage, TaskRefineResult, LocalTaskSuggestion, ReportRefineMessage, ReportRefineResult, ReportSources, ReportStylePreset, WorkArchive } from "./types";
 import i18n from "@/i18n";
 import { errorMessage, parseWorkspaceExport, sortNodesForDelete, sortNodesForImport, downloadJson } from "./helpers";
 
@@ -34,6 +34,14 @@ export type MiraApi = {
     includedNoteIds?: string[];
     stylePreset?: ReportStylePreset;
   }) => Promise<ReportGenerateResult>;
+  assembleReport: (payload: {
+    period: Period;
+    scope?: "personal" | "team";
+    language: "en" | "zh";
+    includedTaskIds?: string[];
+    includedNoteIds?: string[];
+  }) => Promise<ReportGenerateResult>;
+  loadLocalTaskSuggestion: (scope?: "personal" | "team") => Promise<LocalTaskSuggestion>;
   loadWorkArchive: () => Promise<WorkArchive>;
   uploadReportHistory: (files: Array<{ filename: string; content: string }>) => Promise<{ saved: string[]; count: number }>;
   processReportColdStart: (language: "en" | "zh") => Promise<ReportColdStartResult>;
@@ -58,10 +66,11 @@ export type MiraApi = {
 };
 
 function useRequest(token: string, setError: (value: string) => void) {
-  return useCallback(async <T,>(path: string, options: RequestInit = {}) => {
+  return useCallback(async <T,>(path: string, options: RequestInit = {}, manualAi = false) => {
     const headers = new Headers(options.headers);
     headers.set("Content-Type", "application/json");
     if (token) headers.set("Authorization", `Bearer ${token}`);
+    if (manualAi) headers.set("X-Mira-AI-Manual", "1");
     const response = await fetch(`${API_URL}${path}`, { ...options, headers });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
@@ -241,12 +250,22 @@ export function useMiraApi(): MiraApi {
       if (payload.scope) params.set("scope", payload.scope);
       return request<ReportSources>(`/me/reports/sources?${params.toString()}`);
     },
-    generateReport: (payload) => request<ReportGenerateResult>("/me/reports/generate", { method: "POST", body: JSON.stringify(payload) }),
+    generateReport: (payload) =>
+      request<ReportGenerateResult>("/me/reports/generate", { method: "POST", body: JSON.stringify(payload) }, true),
+    assembleReport: (payload) =>
+      request<ReportGenerateResult>("/me/reports/assemble", { method: "POST", body: JSON.stringify(payload) }),
+    loadLocalTaskSuggestion: (scope) => {
+      const params = scope ? `?scope=${scope}` : "";
+      return request<LocalTaskSuggestion>(`/me/tasks/local-suggestion${params}`);
+    },
     loadWorkArchive: () => request<WorkArchive>("/me/work/archive"),
     uploadReportHistory: (files) => request<{ saved: string[]; count: number }>("/me/reports/cold-start/upload", { method: "POST", body: JSON.stringify({ files }) }),
-    processReportColdStart: (language) => request<ReportColdStartResult>("/me/reports/cold-start/process", { method: "POST", body: JSON.stringify({ language }) }),
-    refineTasks: (payload) => request<TaskRefineResult>("/me/tasks/ai-refine", { method: "POST", body: JSON.stringify(payload) }),
-    refineReport: (payload) => request<ReportRefineResult>("/me/reports/refine", { method: "POST", body: JSON.stringify(payload) }),
+    processReportColdStart: (language) =>
+      request<ReportColdStartResult>("/me/reports/cold-start/process", { method: "POST", body: JSON.stringify({ language }) }, true),
+    refineTasks: (payload) =>
+      request<TaskRefineResult>("/me/tasks/ai-refine", { method: "POST", body: JSON.stringify(payload) }, true),
+    refineReport: (payload) =>
+      request<ReportRefineResult>("/me/reports/refine", { method: "POST", body: JSON.stringify(payload) }, true),
     createTeamNode: (payload) => mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
     updateTeamNode: (id, payload) => mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteTeamNode: (id) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),

@@ -158,6 +158,7 @@ export function App() {
               isManager={isManager}
               onCreate={handleCreateTask}
               onUpdate={handleUpdateTask}
+              onLoadLocalSuggestion={() => api.loadLocalTaskSuggestion("personal")}
               onRefineTasks={api.refineTasks}
             />
           )}
@@ -166,6 +167,7 @@ export function App() {
             <ReportView
               isManager={isManager}
               onLoadReportSources={api.loadReportSources}
+              onAssembleReport={api.assembleReport}
               onGenerateReport={api.generateReport}
               onRefineReport={api.refineReport}
             />

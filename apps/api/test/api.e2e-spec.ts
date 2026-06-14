@@ -341,6 +341,7 @@ describe("Mira Nest API", () => {
     const generated = await request(app.getHttpServer())
       .post("/me/reports/generate")
       .set("Authorization", `Bearer ${managerToken}`)
+      .set("X-Mira-AI-Manual", "1")
       .send({ period: "weekly", scope: "personal", language: "en" })
       .expect(201);
     expect(generated.body.answer).toContain("Weekly Report");
@@ -398,6 +399,7 @@ describe("Mira Nest API", () => {
     const processed = await request(app.getHttpServer())
       .post("/me/reports/cold-start/process")
       .set("Authorization", `Bearer ${managerToken}`)
+      .set("X-Mira-AI-Manual", "1")
       .send({ language: "zh" })
       .expect(201);
     expect(processed.body.imported).toBeGreaterThan(0);
@@ -454,6 +456,7 @@ describe("Mira Nest API", () => {
     const taskRefine = await request(app.getHttpServer())
       .post("/me/tasks/ai-refine")
       .set("Authorization", `Bearer ${alexToken}`)
+      .set("X-Mira-AI-Manual", "1")
       .send({
         language: "en",
         messages: [{ role: "user", content: "Generate today's todos" }],
@@ -471,6 +474,7 @@ describe("Mira Nest API", () => {
     const reportRefine = await request(app.getHttpServer())
       .post("/me/reports/refine")
       .set("Authorization", `Bearer ${alexToken}`)
+      .set("X-Mira-AI-Manual", "1")
       .send({
         language: "en",
         period: "daily",
@@ -523,6 +527,7 @@ describe("Mira Nest API", () => {
     const generated = await request(app.getHttpServer())
       .post("/me/reports/generate")
       .set("Authorization", `Bearer ${alexToken}`)
+      .set("X-Mira-AI-Manual", "1")
       .send({
         period: "weekly",
         language: "en",
@@ -533,6 +538,75 @@ describe("Mira Nest API", () => {
       .expect(201);
     expect(generated.body.answer).toContain("Selected Report");
 
+    fetchMock.mockRestore();
+  });
+
+  it("returns local task suggestions and assembles reports without LLM", async () => {
+    const alexLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "alex@mira.local", password: "password123" })
+      .expect(201);
+    const alexToken = alexLogin.body.accessToken;
+
+    const suggestion = await request(app.getHttpServer())
+      .get("/me/tasks/local-suggestion")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .expect(200);
+    expect(["phrase", "task", "note"]).toContain(suggestion.body.source);
+
+    const sources = await request(app.getHttpServer())
+      .get("/me/reports/sources?period=weekly")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .expect(200);
+    const taskIds = sources.body.tasks.slice(0, 2).map((task: { id: string }) => task.id);
+
+    const assembled = await request(app.getHttpServer())
+      .post("/me/reports/assemble")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .send({ period: "weekly", language: "en", includedTaskIds: taskIds, includedNoteIds: [] })
+      .expect(201);
+    expect(assembled.body.answer).toContain("weekly report");
+    expect(assembled.body.answer).toContain("Completed work");
+    expect(assembled.body.period).toBe("weekly");
+  });
+
+  it("rejects LLM calls without manual header when required", async () => {
+    const alexLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "alex@mira.local", password: "password123" })
+      .expect(201);
+    const alexToken = alexLogin.body.accessToken;
+
+    process.env.MIRA_AI_PROVIDER = "openai";
+    process.env.MIRA_AI_API_KEY = "test-key";
+    process.env.MIRA_AI_BASE_URL = "https://ai.example/v1";
+    process.env.MIRA_AI_MODEL = "test-model";
+    process.env.MIRA_AI_PROXY = "off";
+    process.env.MIRA_AI_REQUIRE_MANUAL_HEADER = "true";
+
+    await request(app.getHttpServer())
+      .post("/me/tasks/ai-refine")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .send({ language: "en", messages: [{ role: "user", content: "Generate todos" }] })
+      .expect(403);
+
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        choices: [{ message: { content: "# Weekly Report\n\nManual header ok." } }],
+      }),
+    } as Response);
+
+    const generated = await request(app.getHttpServer())
+      .post("/me/reports/generate")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .set("X-Mira-AI-Manual", "1")
+      .send({ period: "weekly", language: "en" })
+      .expect(201);
+    expect(generated.body.answer).toContain("Manual header ok");
+
+    delete process.env.MIRA_AI_REQUIRE_MANUAL_HEADER;
     fetchMock.mockRestore();
   });
 });

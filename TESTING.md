@@ -65,6 +65,17 @@ npm run build:api
 npm run test:api
 ```
 
+## Manual-only LLM policy
+
+Automatic UI flows do **not** call LLM providers:
+
+- **Tasks ghost suggestions** use local phrase history plus `GET /me/tasks/local-suggestion` (no tokens).
+- **Report preview** uses `POST /me/reports/assemble` (template markdown, no tokens).
+
+LLM runs only on explicit user actions (AI Refine panels, **Generate with AI**, style presets, cold-start Analyze). The web client sends `X-Mira-AI-Manual: 1` on those requests. Set `MIRA_AI_REQUIRE_MANUAL_HEADER=true` in the API environment to reject LLM calls that omit the header.
+
+Future wiki/Ask endpoints must follow the same rule: user-initiated POST only, never on mount, debounce, or save hooks.
+
 Manual API smoke test:
 
 - `POST /auth/login` with `manager@mira.local`, `alex@mira.local`, and `admin@mira.local`.

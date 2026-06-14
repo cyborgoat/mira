@@ -187,6 +187,74 @@ export class MeService {
     });
   }
 
+  async localSuggestion(user: AuthUser, scope: "personal" | "team" = "personal") {
+    const requestedScope = scope === "team" ? "team" : "personal";
+    const fullUser = await this.users.findById(user.id);
+    if (!fullUser) throw new NotFoundException("User not found");
+    const publicUser = this.users.toPublicUser(fullUser);
+    if (requestedScope === "team" && !publicUser.canViewTeam) {
+      throw new ForbiddenException("Team scope is not available for your role");
+    }
+
+    const ownerNodeId = this.requireOwnNode(user);
+    const nodeIds =
+      requestedScope === "personal"
+        ? [ownerNodeId]
+        : user.isSuperuser
+          ? await this.listActiveNodeIds()
+          : [ownerNodeId, ...(await this.listDescendantIds(ownerNodeId))];
+    if (requestedScope === "team" && nodeIds.length <= 1 && !user.isSuperuser) {
+      throw new ForbiddenException("No subordinate team view is available");
+    }
+
+    const [tasks, notes] = await Promise.all([
+      this.content.listTasks({ nodeIds }),
+      this.content.listNotes({ nodeIds }),
+    ]);
+    const filtered = filterByPeriod(tasks, notes, "daily");
+    const openTasks = filtered.tasks.filter((task) => task.status !== "complete");
+    const now = new Date();
+
+    const rankedOpenTasks = [...openTasks].sort((left, right) => {
+      const leftOverdue = left.dueDate && new Date(left.dueDate) < now ? 1 : 0;
+      const rightOverdue = right.dueDate && new Date(right.dueDate) < now ? 1 : 0;
+      if (leftOverdue !== rightOverdue) return rightOverdue - leftOverdue;
+      const priorityRank = (priority: TaskPriority) => (priority === "high" ? 2 : priority === "normal" ? 1 : 0);
+      const leftPriority = priorityRank(left.priority);
+      const rightPriority = priorityRank(right.priority);
+      if (leftPriority !== rightPriority) return rightPriority - leftPriority;
+      return new Date(left.updatedAt).getTime() - new Date(right.updatedAt).getTime();
+    });
+
+    if (rankedOpenTasks.length) {
+      const task = rankedOpenTasks[0];
+      return {
+        title: task.title,
+        details: task.details?.slice(0, 120) || undefined,
+        source: "task" as const,
+      };
+    }
+
+    const recentNotes = [...filtered.notes].sort(
+      (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+    );
+    if (recentNotes.length) {
+      const note = recentNotes[0];
+      const firstLine =
+        note.content
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .find(Boolean) || note.title;
+      return {
+        title: firstLine.slice(0, 120),
+        details: note.title,
+        source: "note" as const,
+      };
+    }
+
+    return { title: "", details: undefined, source: "task" as const };
+  }
+
   async createTask(user: AuthUser, payload: Omit<CreateTaskDto, "ownerNodeId">) {
     this.requireOwnNode(user);
     return this.content.createTaskForUser(user.id, payload);

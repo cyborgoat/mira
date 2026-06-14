@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, UseInterceptors } from "@nestjs/common";
+import { AiManualInterceptor } from "../ai/ai-manual.interceptor";
 import { LlmConfigService } from "../ai/llm-config.service";
 import { CurrentUser, AuthUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -63,8 +64,14 @@ export class MeController {
   }
 
   @Post("tasks/ai-refine")
+  @UseInterceptors(AiManualInterceptor)
   refineTasks(@CurrentUser() user: AuthUser, @Body() payload: TaskAiRefineDto) {
     return this.me.refineTasks(user, payload);
+  }
+
+  @Get("tasks/local-suggestion")
+  localSuggestion(@CurrentUser() user: AuthUser, @Query("scope") scope?: "personal" | "team") {
+    return this.me.localSuggestion(user, scope);
   }
 
   @Get("reports/profile")
@@ -82,11 +89,18 @@ export class MeController {
   }
 
   @Post("reports/generate")
+  @UseInterceptors(AiManualInterceptor)
   generateReport(@CurrentUser() user: AuthUser, @Body() payload: GenerateReportDto) {
     return this.reports.generateReport(user, payload);
   }
 
+  @Post("reports/assemble")
+  assembleReport(@CurrentUser() user: AuthUser, @Body() payload: GenerateReportDto) {
+    return this.reports.assembleReport(user, payload);
+  }
+
   @Post("reports/refine")
+  @UseInterceptors(AiManualInterceptor)
   refineReport(@CurrentUser() user: AuthUser, @Body() payload: RefineReportDto) {
     return this.reports.refineReport(user, payload);
   }
@@ -97,6 +111,7 @@ export class MeController {
   }
 
   @Post("reports/cold-start/process")
+  @UseInterceptors(AiManualInterceptor)
   processReportColdStart(@CurrentUser() user: AuthUser, @Body() payload: ProcessReportColdStartDto) {
     return this.reports.processColdStart(user, payload.language);
   }

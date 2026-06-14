@@ -158,6 +158,12 @@ export type TaskRefineResult = {
   suggestions: Array<{ title: string; details?: string }>;
 };
 
+export type LocalTaskSuggestion = {
+  title: string;
+  details?: string;
+  source: "task" | "note";
+};
+
 export type ReportRefineMessage = {
   role: "user" | "assistant";
   content: string;
