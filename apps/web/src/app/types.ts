@@ -1,14 +1,9 @@
-export type Route = "tasks" | "notes" | "stats" | "llm-wiki" | "ask-mira" | "settings";
-export type ViewMode = "personal" | "team";
+export type Route = "tasks" | "report" | "my-work" | "settings";
 export type TaskStatus = "open" | "complete";
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 export type Period = "daily" | "weekly" | "monthly";
-export type LlmWikiPeriod = Period | "historical";
-export type LlmWikiScope = "personal" | "team";
-export type LlmWikiTarget = "team" | string;
 export type SettingsTab = "account" | "security" | "team" | "llm";
 export type LlmProvider = "openai" | "openrouter" | "anthropic" | "custom-openai-compatible";
-export type AskMiraSourceType = "wiki" | "wiki-index" | "wiki-page" | "task" | "note" | "team-member";
 
 export type TeamNode = {
   id: string;
@@ -92,86 +87,91 @@ export type UpdateLlmConfigPayload = Partial<Pick<LlmConfig, "provider" | "baseU
   clearApiKey?: boolean;
 };
 
-export type LlmWikiSource = {
-  path: string;
-  filename: string;
-  size: number;
-  updatedAt: string;
-};
-
-export type LlmWikiPage = {
-  path: string;
-  title: string;
-  size: number;
-  updatedAt: string;
-};
-
-export type LlmWikiOwner = {
+export type ReportSource = {
   id: string;
-  name: string;
-  title: string | null;
-  email: string;
-  teamNodeId: string | null;
-  canEdit: boolean;
-};
-
-export type LlmWikiReferenceStats = {
-  wikiPages: number;
-  tasks: number;
-  meetingNotes: number;
-  resources: number;
-};
-
-export type LlmWikiOverview = {
-  sources: LlmWikiSource[];
-  pages: LlmWikiPage[];
-  index: string;
-  log: string;
-  owner: LlmWikiOwner;
-  referenceStats: LlmWikiReferenceStats;
-};
-
-export type LlmWikiIngestResult = {
-  sourcePath: string;
-  summary: string;
-  writtenPages: string[];
-  logEntry?: string;
-  referenceStats?: LlmWikiReferenceStats;
-};
-
-export type LlmWikiLintResult = {
-  findings: string[];
-  notes: string;
-  logEntry?: string;
-};
-
-export type LlmWikiPageContent = {
-  path: string;
-  content: string;
-};
-
-export type AskMiraSource = {
-  id: string;
-  type: AskMiraSourceType;
+  type: "task" | "note" | "team-member";
   title: string;
   ownerId: string;
   ownerName: string;
-  path?: string;
   snippet: string;
   content: string;
 };
 
-export type AskMiraResult = {
-  answer: string;
-  sources: AskMiraSource[];
+export type ReportProfile = {
+  ready: boolean;
+  sampleCount: number;
+  importedTaskCount: number;
+  lastProcessedAt: string | null;
+  rawReportCount: number;
+  toneSummary: string | null;
 };
 
-export type AskMiraMessage = {
+export type ReportGenerateResult = {
+  answer: string;
+  sources: ReportSource[];
+  period: Period;
+  scope: "personal" | "team";
+};
+
+export type ReportSourceTask = {
   id: string;
+  title: string;
+  status: TaskStatus;
+  completedAt: string | null;
+  confidence: "high" | "uncertain";
+};
+
+export type ReportSources = {
+  period: Period;
+  scope: "personal" | "team";
+  tasks: ReportSourceTask[];
+  notes: Array<{ id: string; title: string; date: string }>;
+};
+
+export type ReportStylePreset = "concise" | "value" | "effort";
+
+export type WorkArchiveWeek = {
+  weekStart: string;
+  label: string;
+  taskCount: number;
+  preview: string;
+};
+
+export type WorkArchiveProject = {
+  tag: string;
+  taskCount: number;
+  noteCount: number;
+};
+
+export type WorkArchive = {
+  weeks: WorkArchiveWeek[];
+  projects: WorkArchiveProject[];
+};
+
+export type TaskRefineMessage = {
   role: "user" | "assistant";
   content: string;
-  createdAt: string;
-  sources?: AskMiraSource[];
 };
 
-export type StatsSnapshot = Stats;
+export type TaskRefineResult = {
+  assistantMessage: string;
+  suggestions: Array<{ title: string; details?: string }>;
+};
+
+export type ReportRefineMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type ReportRefineResult = {
+  revisedDraft: string;
+  assistantMessage: string;
+};
+
+export type ReportColdStartResult = {
+  imported: number;
+  skipped: number;
+  profileReady: boolean;
+  styleSummary: string;
+  sampleCount: number;
+};

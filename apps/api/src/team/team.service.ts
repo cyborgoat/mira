@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { createId } from "../common/ids";
-import { periodStart, Period } from "../common/period";
 import { PrismaService } from "../prisma/prisma.service";
 import { WorkspaceContentService } from "../workspace-content/workspace-content.service";
 import { CreateTeamNodeDto, UpdateTeamNodeDto } from "./dto/team-node.dto";
@@ -74,55 +73,10 @@ export class TeamService {
     });
   }
 
-  async view(nodeId: string | undefined, period: Period) {
-    const selectedNode = nodeId ? await this.ensureNode(nodeId) : await this.firstActiveNode();
-    if (!selectedNode) {
-      return {
-        selectedNode: null,
-        descendantIds: [],
-        tasks: [],
-        notes: [],
-        stats: { totalTasks: 0, completedTasks: 0, openTasks: 0, notes: 0, completionRate: 0 },
-      };
-    }
-
-    const descendantIds = [selectedNode.id, ...(await this.descendantIds(selectedNode.id))];
-    const start = periodStart(period);
-    const tasks = (await this.content.listTasks({ nodeIds: descendantIds })).filter((task) => {
-      const createdAt = new Date(task.createdAt);
-      const completedAt = task.completedAt ? new Date(task.completedAt) : null;
-      const dueDate = task.dueDate ? new Date(task.dueDate) : null;
-      return createdAt >= start || Boolean(completedAt && completedAt >= start) || Boolean(dueDate && dueDate >= start);
-    });
-    const notes = (await this.content.listNotes({ nodeIds: descendantIds })).filter((note) => new Date(note.date) >= start);
-    const completedTasks = tasks.filter((task) => task.status === "complete").length;
-
-    return {
-      selectedNode,
-      descendantIds,
-      tasks,
-      notes,
-      stats: {
-        totalTasks: tasks.length,
-        completedTasks,
-        openTasks: tasks.length - completedTasks,
-        notes: notes.length,
-        completionRate: tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0,
-      },
-    };
-  }
-
   async idsForScope(nodeId: string, scope: "self" | "tree") {
     await this.ensureNode(nodeId);
     if (scope === "self") return [nodeId];
     return [nodeId, ...(await this.descendantIds(nodeId))];
-  }
-
-  private async firstActiveNode() {
-    return this.prisma.teamNode.findFirst({
-      where: { active: true },
-      orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
-    });
   }
 
   private async ensureNode(id: string) {

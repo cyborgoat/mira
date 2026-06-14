@@ -1,24 +1,23 @@
 import i18n from "@/i18n";
-import type { Period, Task, MeetingNote, TeamNode, TaskPriority, WorkspaceExport, TaskStatus } from "./types";
+import type { Task, MeetingNote, TeamNode, TaskPriority, WorkspaceExport, TaskStatus } from "./types";
 
-export type Stats = {
-  tasks: number;
-  completedTasks: number;
-  notes: number;
-  noteWords: number;
-  completionRate: number;
+const LEGACY_ROUTE_ALIASES: Record<string, string> = {
+  "ask-mira": "report",
+  "report-import": "my-work",
+  "cold-start": "my-work",
+  "tasks/import": "my-work",
+  "mira-ask": "my-work",
+  "task-graph": "my-work",
 };
 
 export function resolveRouteFromHash<T extends string>(nav: readonly T[], fallback: T): T {
-  const hash = window.location.hash.replace(/^#\/?/, "");
+  const raw = window.location.hash.replace(/^#\/?/, "");
+  const base = raw.split("/")[0];
+  const hash = LEGACY_ROUTE_ALIASES[raw] ?? LEGACY_ROUTE_ALIASES[base] ?? base;
   return (nav as readonly string[]).includes(hash) ? (hash as T) : fallback;
 }
 
-export function createBlankNote(blankText: string): { id: string; ownerNodeId: string; title: string; date: string; content: string; tags: string; updatedAt: string } {
-  return { id: "", ownerNodeId: "", title: "", date: today(), content: blankText, tags: "", updatedAt: today() };
-}
-
-export function buildStats(tasks: Task[], notes: MeetingNote[]): Stats {
+export function buildStats(tasks: Task[], notes: MeetingNote[]) {
   const completedTasks = tasks.filter((task) => task.status === "complete").length;
   const noteWords = notes.reduce((total, note) => total + wordCount(note.content), 0);
   return { tasks: tasks.length, completedTasks, notes: notes.length, noteWords, completionRate: tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0 };
@@ -62,47 +61,20 @@ export function nodePath(nodes: TeamNode[], node: TeamNode) {
   return parts.join(" / ");
 }
 
-export function nodeLabel(nodes: TeamNode[], id: string) {
-  return nodes.find((node) => node.id === id)?.name ?? i18n.t("common.unknown");
-}
-
 export function formatDate(dateValue: string) {
   return new Intl.DateTimeFormat(i18n.language === "zh" ? "zh-CN" : undefined, { month: "short", day: "numeric" }).format(new Date(dateValue));
-}
-
-export function formatBytes(value: number) {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${Math.round(value / 102.4) / 10} KB`;
-  return `${Math.round(value / 104857.6) / 10} MB`;
-}
-
-export function toDateInput(dateValue: string) {
-  return new Date(dateValue).toISOString().slice(0, 10);
 }
 
 export function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function periodLabel(period: Period, t: (key: string) => string) {
-  return t(`period.${period}`);
-}
-
 export function priorityLabel(priority: TaskPriority, t: (key: string) => string) {
   return t(`priority.${priority}`);
 }
 
-export function wordCount(value: string) {
+function wordCount(value: string) {
   return value.trim().split(/\s+/).filter(Boolean).length;
-}
-
-export function firstLines(content: string) {
-  return content
-    .split("\n")
-    .map((line) => line.replace(/^#+\s*/, "").replace(/^[-*]\s*/, "").trim())
-    .filter(Boolean)
-    .slice(0, 3)
-    .join(" · ");
 }
 
 export function renderMarkdown(markdown: string) {
@@ -125,25 +97,6 @@ export function renderInlineMarkdown(value: string) {
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|mailto:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
-}
-
-export function exportSummaryMarkdown(tasks: Task[], notes: MeetingNote[], period: Period) {
-  const completed = tasks.filter((task) => task.status === "complete");
-  const open = tasks.filter((task) => task.status === "open");
-  const lines = [
-    `# ${i18n.t("export.title", { period: periodLabel(period, (key) => i18n.t(key) ) })}`,
-    "",
-    `## ${i18n.t("export.completedTasks")}`,
-    ...(completed.length ? completed.map((task) => `- ${task.title}${task.details ? `: ${task.details}` : ""}`) : [`- ${i18n.t("export.noCompletedTasks")}`]),
-    "",
-    `## ${i18n.t("export.openTasks")}`,
-    ...(open.length ? open.map((task) => `- ${task.title}${task.dueDate ? ` (${i18n.t("tasks.due", { date: formatDate(task.dueDate) })})` : ""}`) : [`- ${i18n.t("export.noOpenTasks")}`]),
-    "",
-    `## ${i18n.t("export.meetingNotes")}`,
-    ...(notes.length ? notes.map((note) => `- ${note.title}${note.tags ? ` [${note.tags}]` : ""}: ${firstLines(note.content)}`) : [`- ${i18n.t("export.noMeetingNotes")}`]),
-    "",
-  ];
-  downloadBlob(lines.join("\n"), `mira-summary-${period}-${today()}.md`, "text/markdown");
 }
 
 export function parseWorkspaceExport(text: string): WorkspaceExport {

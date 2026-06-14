@@ -161,6 +161,65 @@ export class WorkspaceContentService {
     return { ok: true };
   }
 
+  async importCompletedTasksForUser(
+    ownerUserId: string,
+    missions: Array<{ title: string; details?: string; completedAt?: string | null; weekOf?: string | null }>,
+  ) {
+    const folder = await this.ensurePersonFolderForUser(ownerUserId);
+    const existing = await this.tasksForFolder(folder);
+    const existingKeys = new Set(existing.map((task) => this.importDedupeKey(task.title, task.completedAt)));
+    let imported = 0;
+    let skipped = 0;
+    const nextTasks = [...existing];
+
+    for (const mission of missions) {
+      const title = mission.title.trim();
+      if (!title) {
+        skipped += 1;
+        continue;
+      }
+      const completedAt = this.resolveImportCompletedAt(mission.completedAt, mission.weekOf);
+      const key = this.importDedupeKey(title, completedAt);
+      if (existingKeys.has(key)) {
+        skipped += 1;
+        continue;
+      }
+      const now = completedAt || new Date().toISOString();
+      const task: WorkspaceTask = {
+        id: createId("task"),
+        ownerUserId: folder.userId,
+        ownerNodeId: folder.nodeId,
+        title,
+        details: mission.details?.trim() || "",
+        status: "complete",
+        priority: "normal",
+        dueDate: null,
+        createdAt: now,
+        completedAt,
+        updatedAt: now,
+      };
+      nextTasks.push(task);
+      existingKeys.add(key);
+      imported += 1;
+    }
+
+    if (imported > 0) await this.writeTasks(folder, nextTasks);
+    return { imported, skipped };
+  }
+
+  private importDedupeKey(title: string, completedAt: string | null) {
+    const normalizedTitle = title.trim().toLowerCase();
+    const week = completedAt ? completedAt.slice(0, 10) : "unknown";
+    return createHash("sha1").update(`${normalizedTitle}|${week}`).digest("hex");
+  }
+
+  private resolveImportCompletedAt(completedAt?: string | null, weekOf?: string | null) {
+    const candidate = completedAt || weekOf;
+    if (!candidate) return new Date().toISOString();
+    const parsed = new Date(candidate);
+    return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+  }
+
   private async createTaskInFolder(folder: PersonFolder, payload: { title: string; details?: string; priority?: TaskPriority; dueDate?: string | null }) {
     const title = payload.title.trim();
     if (!title) throw new BadRequestException("Task title is required");

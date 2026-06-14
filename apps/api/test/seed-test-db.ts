@@ -50,18 +50,18 @@ export async function seedTestDb(dbPath: string, password: string) {
     const passwordHash = await bcrypt.hash(password, 12);
     await client.teamNode.createMany({
       data: [
-        { id: "node_root", name: "Mira Team", title: "Organization", parentId: null, sortOrder: 0, active: true, updatedAt: now },
-        { id: "node_manager", name: "Product Engineering", title: "Engineering Manager", parentId: "node_root", sortOrder: 1, active: true, updatedAt: now },
-        { id: "node_alex", name: "Alex Chen", title: "Frontend Engineer", parentId: "node_manager", sortOrder: 1, active: true, updatedAt: now },
-        { id: "node_sam", name: "Sam Rivera", title: "Backend Engineer", parentId: "node_manager", sortOrder: 2, active: true, updatedAt: now },
+        { id: "node_root", name: "Mira Consulting", title: "Organization", parentId: null, sortOrder: 0, active: true, updatedAt: now },
+        { id: "node_manager", name: "Consulting Squad", title: "Team Leader", parentId: "node_root", sortOrder: 1, active: true, updatedAt: now },
+        { id: "node_alex", name: "Alex Chen", title: "Consultant", parentId: "node_manager", sortOrder: 1, active: true, updatedAt: now },
+        { id: "node_sam", name: "Sam Rivera", title: "Consultant", parentId: "node_manager", sortOrder: 2, active: true, updatedAt: now },
       ],
     });
     await client.user.createMany({
       data: [
         { id: TEST_USER_IDS.admin, email: "admin@example.com", passwordHash, role: "System Owner", isSuperuser: true, teamNodeId: "node_root", updatedAt: now },
-        { id: TEST_USER_IDS.manager, email: "manager@mira.local", passwordHash, role: "Engineering Lead", isSuperuser: false, teamNodeId: "node_manager", updatedAt: now },
-        { id: TEST_USER_IDS.alex, email: "alex@mira.local", passwordHash, role: "Frontend Specialist", isSuperuser: false, teamNodeId: "node_alex", updatedAt: now },
-        { id: TEST_USER_IDS.sam, email: "sam@mira.local", passwordHash, role: "Platform Specialist", isSuperuser: false, teamNodeId: "node_sam", updatedAt: now },
+        { id: TEST_USER_IDS.manager, email: "manager@mira.local", passwordHash, role: "Team Leader", isSuperuser: false, teamNodeId: "node_manager", updatedAt: now },
+        { id: TEST_USER_IDS.alex, email: "alex@mira.local", passwordHash, role: "Consultant", isSuperuser: false, teamNodeId: "node_alex", updatedAt: now },
+        { id: TEST_USER_IDS.sam, email: "sam@mira.local", passwordHash, role: "Consultant", isSuperuser: false, teamNodeId: "node_sam", updatedAt: now },
       ],
     });
   } finally {

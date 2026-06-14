@@ -1,11 +1,47 @@
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import request from "supertest";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { seedTestDb, TEST_USER_IDS } from "./seed-test-db";
+
+function alignWorkspaceFixtureDates(workspaceRoot: string) {
+  const now = new Date();
+  const anchor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 15, 12, 0, 0));
+  const created = new Date(anchor);
+  created.setUTCDate(5);
+  const completed = new Date(anchor);
+  completed.setUTCDate(10);
+  const due = new Date(anchor);
+  due.setUTCDate(20);
+  const iso = (value: Date) => value.toISOString();
+  const dateOnly = (value: Date) => value.toISOString().slice(0, 10);
+
+  const patchTaskDates = (filePath: string, taskId: string) => {
+    if (!existsSync(filePath)) return;
+    let content = readFileSync(filePath, "utf8");
+    const blockRe = new RegExp(`(- \\[[ x]\\][\\s\\S]*?Id: ${taskId}[\\s\\S]*?)(?=\\n- \\[|$)`);
+    const match = content.match(blockRe);
+    if (!match) return;
+    let block = match[1];
+    block = block.replace(/Created: [^\n]+/, `Created: ${iso(created)}`);
+    block = block.replace(/Updated: [^\n]+/, `Updated: ${iso(completed)}`);
+    if (/Completed:/.test(block)) {
+      block = block.replace(/Completed: [^\n]+/, `Completed: ${iso(completed)}`);
+    }
+    if (/Due:/.test(block)) {
+      block = block.replace(/Due: [^\n]+/, `Due: ${dateOnly(due)}`);
+    }
+    content = content.replace(match[1], block);
+    writeFileSync(filePath, content);
+  };
+
+  patchTaskDates(join(workspaceRoot, "people", TEST_USER_IDS.manager, "tasks.md"), "task_product_onboarding_wiki_scope");
+  patchTaskDates(join(workspaceRoot, "people", "alex-chen", "tasks.md"), "task_alex_llm_wiki_console_states");
+  patchTaskDates(join(workspaceRoot, "people", TEST_USER_IDS.sam, "tasks.md"), "task_sam_vault_path_guards");
+}
 
 describe("Mira Nest API", () => {
   let app: INestApplication;
@@ -17,6 +53,8 @@ describe("Mira Nest API", () => {
   const wikiRoot = join(apiRoot, "tmp", "wiki");
   const workspaceRoot = join(apiRoot, "tmp", "workspace");
   const llmConfigRoot = join(apiRoot, "tmp", "llm-config");
+  const reportHistoryRoot = join(apiRoot, "tmp", "report-history");
+  const reportStyleRoot = join(apiRoot, "tmp", "report-style");
 
   beforeAll(async () => {
     mkdirSync(join(apiRoot, "tmp"), { recursive: true });
@@ -24,14 +62,20 @@ describe("Mira Nest API", () => {
     rmSync(wikiRoot, { force: true, recursive: true });
     rmSync(workspaceRoot, { force: true, recursive: true });
     rmSync(llmConfigRoot, { force: true, recursive: true });
+    rmSync(reportHistoryRoot, { force: true, recursive: true });
+    rmSync(reportStyleRoot, { force: true, recursive: true });
     cpSync(join(repoRoot, "mira-workspace", "workspace"), workspaceRoot, { recursive: true });
     renameSync(join(workspaceRoot, "people", TEST_USER_IDS.alex), join(workspaceRoot, "people", "alex-chen"));
+    alignWorkspaceFixtureDates(workspaceRoot);
     process.env.MIRA_DATABASE_URL = `file:${dbPath}`;
     process.env.DATABASE_URL = `file:${dbPath}`;
     process.env.MIRA_WIKI_ROOT = wikiRoot;
     process.env.MIRA_WORKSPACE_ROOT = workspaceRoot;
     process.env.MIRA_LLM_CONFIG_ROOT = llmConfigRoot;
+    process.env.MIRA_REPORT_HISTORY_ROOT = reportHistoryRoot;
+    process.env.MIRA_REPORT_STYLE_ROOT = reportStyleRoot;
     process.env.MIRA_JWT_SECRET = "test-secret";
+    process.env.MIRA_SKIP_DEMO_SEED = "1";
 
     await seedTestDb(dbPath, "password123");
 
@@ -52,6 +96,8 @@ describe("Mira Nest API", () => {
     rmSync(wikiRoot, { force: true, recursive: true });
     rmSync(workspaceRoot, { force: true, recursive: true });
     rmSync(llmConfigRoot, { force: true, recursive: true });
+    rmSync(reportHistoryRoot, { force: true, recursive: true });
+    rmSync(reportStyleRoot, { force: true, recursive: true });
   });
 
   afterEach(() => {
@@ -66,6 +112,8 @@ describe("Mira Nest API", () => {
     process.env.MIRA_WIKI_ROOT = wikiRoot;
     process.env.MIRA_WORKSPACE_ROOT = workspaceRoot;
     process.env.MIRA_LLM_CONFIG_ROOT = llmConfigRoot;
+    process.env.MIRA_REPORT_HISTORY_ROOT = reportHistoryRoot;
+    process.env.MIRA_REPORT_STYLE_ROOT = reportStyleRoot;
   });
 
   it("logs in with the initial superuser", async () => {
@@ -141,46 +189,12 @@ describe("Mira Nest API", () => {
       .expect(200);
     expect(adminConfig.body.hasApiKey).toBe(false);
 
-    process.env.MIRA_AI_PROVIDER = "openai";
-    process.env.MIRA_AI_API_KEY = "env-key";
-    process.env.MIRA_AI_BASE_URL = "https://env.example/v1";
-    process.env.MIRA_AI_MODEL = "env-model";
-    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({
-        choices: [{
-          message: {
-            content: JSON.stringify({
-              summary: "Configured from settings.",
-              files: [{ path: "index.md", content: "# Index\n\nConfigured." }],
-              logEntry: "settings-config",
-            }),
-          },
-        }],
-      }),
-    } as Response);
-
-    await request(app.getHttpServer())
-      .post("/me/llm-wiki/generate")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ period: "monthly", scope: "personal", language: "en" })
-      .expect(201);
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("https://openrouter.ai/api/v1/chat/completions");
-    expect((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).headers).toMatchObject({ Authorization: "Bearer saved-key" });
-
     const cleared = await request(app.getHttpServer())
       .patch("/me/settings/llm-config")
       .set("Authorization", `Bearer ${managerToken}`)
       .send({ clearApiKey: true })
       .expect(200);
     expect(cleared.body.hasApiKey).toBe(false);
-
-    await request(app.getHttpServer())
-      .post("/me/llm-wiki/generate")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ period: "monthly", scope: "personal", language: "en" })
-      .expect(503);
   });
 
   it("creates work records and aggregates team view", async () => {
@@ -223,10 +237,6 @@ describe("Mira Nest API", () => {
     expect(tree.body[0].ownerNodeId).toBe(child.id);
     expect(tree.body[0].priority).toBe("high");
     expect(tree.body[0].dueDate).toBeTruthy();
-
-    const view = await request(app.getHttpServer()).get(`/team/view?nodeId=${root.id}&period=weekly`).set("Authorization", `Bearer ${token}`).expect(200);
-    expect(view.body.stats.totalTasks).toBe(1);
-    expect(view.body.stats.notes).toBe(1);
   });
 
   it("scopes personal and team views from the tree rather than role labels", async () => {
@@ -236,7 +246,7 @@ describe("Mira Nest API", () => {
       .expect(201);
     const managerToken = managerLogin.body.accessToken;
 
-    expect(managerLogin.body.user.role).toBe("Engineering Lead");
+    expect(managerLogin.body.user.role).toBe("Team Leader");
     expect(managerLogin.body.user.isSuperuser).toBe(false);
     expect(managerLogin.body.user.canViewTeam).toBe(true);
 
@@ -268,30 +278,17 @@ describe("Mira Nest API", () => {
       .expect(201);
     const alexToken = alexLogin.body.accessToken;
 
-    expect(alexLogin.body.user.role).toBe("Frontend Specialist");
+    expect(alexLogin.body.user.role).toBe("Consultant");
     expect(alexLogin.body.user.canViewTeam).toBe(false);
     expect(existsSync(join(workspaceRoot, "people", TEST_USER_IDS.alex))).toBe(true);
     expect(existsSync(join(workspaceRoot, "people", "alex-chen"))).toBe(false);
+
+    alignWorkspaceFixtureDates(workspaceRoot);
 
     const managerWork = await request(app.getHttpServer()).get("/me/work?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
     expect(managerWork.body.tasks[0].ownerUserId).toBe(TEST_USER_IDS.manager);
     expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).toContain("Review onboarding wiki scope");
     expect(managerWork.body.tasks.map((task: { title: string }) => task.title)).not.toContain("Polish LLM Wiki console states");
-
-    await request(app.getHttpServer())
-      .post("/me/notes")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ title: "First new note", date: new Date().toISOString(), content: "First body", tags: "regression" })
-      .expect(201);
-    await request(app.getHttpServer())
-      .post("/me/notes")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ title: "Second new note", date: new Date().toISOString(), content: "Second body", tags: "regression" })
-      .expect(201);
-    const managerNotes = await request(app.getHttpServer()).get("/me/work?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
-    const noteTitles = managerNotes.body.notes.map((note: { title: string }) => note.title);
-    expect(noteTitles).toContain("First new note");
-    expect(noteTitles).toContain("Second new note");
 
     const managerTeam = await request(app.getHttpServer()).get("/me/team-view?period=monthly").set("Authorization", `Bearer ${managerToken}`).expect(200);
     const teamTitles = managerTeam.body.tasks.map((task: { title: string }) => task.title);
@@ -299,192 +296,243 @@ describe("Mira Nest API", () => {
     expect(teamTitles).toContain("Validate vault path traversal guards");
     expect(teamTitles).not.toContain("Review onboarding wiki scope");
 
-    const emptyWiki = await request(app.getHttpServer())
-      .get("/me/llm-wiki")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .expect(200);
-    expect(emptyWiki.body.index).toContain("# Index");
-    expect(emptyWiki.body.sources).toEqual([]);
+    await request(app.getHttpServer()).get("/me/team-view?period=monthly").set("Authorization", `Bearer ${alexToken}`).expect(403);
+    await request(app.getHttpServer()).get("/tasks").set("Authorization", `Bearer ${managerToken}`).expect(403);
+  });
 
-    await request(app.getHttpServer())
-      .post("/me/llm-wiki/sources")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ filename: "roadmap.pdf", content: "wrong extension" })
-      .expect(400);
-
-    const source = await request(app.getHttpServer())
-      .post("/me/llm-wiki/sources")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ filename: "roadmap.md", content: "# Roadmap source\n\nPersistent wiki source only." })
+  it("generates period reports and imports cold-start missions", async () => {
+    const managerLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "lead@example.com", password: "new-password-123" })
       .expect(201);
-    expect(source.body.path).toBe("raw/roadmap.md");
-
-    await request(app.getHttpServer())
-      .post("/me/llm-wiki/ingest")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ sourcePath: source.body.path, language: "en" })
-      .expect(503);
+    const managerToken = managerLogin.body.accessToken;
+    const alexLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "alex@mira.local", password: "password123" })
+      .expect(201);
+    const alexToken = alexLogin.body.accessToken;
 
     process.env.MIRA_AI_PROVIDER = "openai";
     process.env.MIRA_AI_API_KEY = "test-key";
     process.env.MIRA_AI_BASE_URL = "https://ai.example/v1";
     process.env.MIRA_AI_MODEL = "test-model";
     process.env.MIRA_AI_PROXY = "off";
-    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
+
+    const profileBefore = await request(app.getHttpServer())
+      .get("/me/reports/profile")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    expect(profileBefore.body.ready).toBe(false);
+
+    await request(app.getHttpServer())
+      .post("/me/reports/generate")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .send({ period: "weekly", scope: "team", language: "en" })
+      .expect(403);
+
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValueOnce({
       ok: true,
       status: 200,
       text: async () => JSON.stringify({
-        choices: [{
-          message: {
-            content: JSON.stringify({
-              summary: "Roadmap source ingested.",
-              files: [
-                { path: "index.md", content: "# Index\n\n- [[Roadmap]]: Persistent wiki source." },
-                { path: "pages/roadmap.md", content: "# Roadmap\n\nPersistent wiki source." },
-              ],
-              logEntry: "ingest | roadmap.md",
-            }),
-          },
-        }],
+        choices: [{ message: { content: "# Weekly Report\n\n## Completed\n\nImported work." } }],
       }),
     } as Response);
 
     const generated = await request(app.getHttpServer())
-      .post("/me/llm-wiki/generate")
+      .post("/me/reports/generate")
       .set("Authorization", `Bearer ${managerToken}`)
-      .send({ period: "monthly", scope: "personal", language: "en" })
+      .send({ period: "weekly", scope: "personal", language: "en" })
       .expect(201);
-    expect(generated.body.summary).toBe("Roadmap source ingested.");
-    let aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(aiBody.messages[1].content).toContain("Source name: workspace-personal-monthly");
-    expect(aiBody.messages[1].content).toContain("Scope: personal");
-    expect(aiBody.messages[1].content).toContain("Review onboarding wiki scope");
-    expect(aiBody.messages[1].content).not.toContain("Polish LLM Wiki console states");
-    expect(generated.body.referenceStats.tasks).toBeGreaterThan(0);
+    expect(generated.body.answer).toContain("Weekly Report");
+    expect(generated.body.period).toBe("weekly");
+    expect(generated.body.scope).toBe("personal");
 
-    const teamGenerated = await request(app.getHttpServer())
-      .post("/me/llm-wiki/generate")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ period: "monthly", scope: "team", language: "en" })
-      .expect(201);
-    expect(teamGenerated.body.referenceStats.tasks).toBeGreaterThan(generated.body.referenceStats.tasks);
-    aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(aiBody.messages[1].content).toContain("Source name: workspace-team-monthly");
-    expect(aiBody.messages[1].content).toContain("Scope: team");
-    expect(aiBody.messages[1].content).toContain("Review onboarding wiki scope");
-    expect(aiBody.messages[1].content).toContain("Polish LLM Wiki console states");
-
-    const teamStats = await request(app.getHttpServer())
-      .get("/me/llm-wiki/reference-stats?period=monthly&scope=team")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .expect(200);
-    expect(teamStats.body.wikiPages).toBeGreaterThan(0);
-    expect(teamStats.body.tasks).toBe(teamGenerated.body.referenceStats.tasks);
-    expect(teamStats.body.meetingNotes).toBe(teamGenerated.body.referenceStats.meetingNotes);
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                missions: [{
+                  title: "Delivered client workshop",
+                  details: "Facilitated discovery session",
+                  completedAt: "2026-05-10",
+                  weekOf: "2026-05-05",
+                  confidence: 0.9,
+                }],
+              }),
+            },
+          }],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                toneSummary: "Concise consulting weekly tone",
+                structurePatterns: ["本周主要工作"],
+                vocabularyHints: ["交付"],
+                exampleExcerpt: "本周完成了客户工作坊。",
+              }),
+            },
+          }],
+        }),
+      } as Response);
 
     await request(app.getHttpServer())
-      .post("/me/llm-wiki/generate")
+      .post("/me/reports/cold-start/upload")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({
+        files: [{
+          filename: "week-2026-05-10.md",
+          content: "# Weekly Report\n\n- Delivered client workshop\n",
+        }],
+      })
+      .expect(201);
+
+    const processed = await request(app.getHttpServer())
+      .post("/me/reports/cold-start/process")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .send({ language: "zh" })
+      .expect(201);
+    expect(processed.body.imported).toBeGreaterThan(0);
+    expect(processed.body.profileReady).toBe(true);
+
+    const profileAfter = await request(app.getHttpServer())
+      .get("/me/reports/profile")
+      .set("Authorization", `Bearer ${managerToken}`)
+      .expect(200);
+    expect(profileAfter.body.ready).toBe(true);
+    expect(profileAfter.body.sampleCount).toBeGreaterThan(0);
+
+    const managerTasks = readFileSync(join(workspaceRoot, "people", TEST_USER_IDS.manager, "tasks.md"), "utf8");
+    expect(managerTasks).toContain("Delivered client workshop");
+    expect(existsSync(join(reportStyleRoot, TEST_USER_IDS.manager, "profile.json"))).toBe(true);
+  });
+
+  it("refines daily todos and report drafts via AI endpoints", async () => {
+    const alexLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "alex@mira.local", password: "password123" })
+      .expect(201);
+    const alexToken = alexLogin.body.accessToken;
+
+    process.env.MIRA_AI_PROVIDER = "openai";
+    process.env.MIRA_AI_API_KEY = "test-key";
+    process.env.MIRA_AI_BASE_URL = "https://ai.example/v1";
+    process.env.MIRA_AI_MODEL = "test-model";
+    process.env.MIRA_AI_PROXY = "off";
+
+    const fetchMock = jest.spyOn(global, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                assistantMessage: "Here are focused todos for today.",
+                suggestions: [{ title: "Review client deck", details: "Finalize slides" }],
+              }),
+            },
+          }],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          choices: [{ message: { content: "# Daily Report\n\nUpdated draft." } }],
+        }),
+      } as Response);
+
+    const taskRefine = await request(app.getHttpServer())
+      .post("/me/tasks/ai-refine")
       .set("Authorization", `Bearer ${alexToken}`)
-      .send({ period: "monthly", scope: "personal", language: "en" })
+      .send({
+        language: "en",
+        messages: [{ role: "user", content: "Generate today's todos" }],
+      })
       .expect(201);
-    aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(aiBody.messages[1].content).toContain("Polish LLM Wiki console states");
-    expect(aiBody.messages[1].content).not.toContain("Review onboarding wiki scope");
-
-    const owners = await request(app.getHttpServer())
-      .get("/me/llm-wiki/owners")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .expect(200);
-    const alexOwner = owners.body.find((owner: { email: string }) => owner.email === "alex@mira.local");
-    expect(alexOwner.name).toBe("Alex Chen");
-
-    const alexWiki = await request(app.getHttpServer())
-      .get(`/me/llm-wiki?ownerId=${alexOwner.id}`)
-      .set("Authorization", `Bearer ${managerToken}`)
-      .expect(200);
-    expect(alexWiki.body.owner.name).toBe("Alex Chen");
-    expect(alexWiki.body.owner.canEdit).toBe(false);
-    expect(alexWiki.body.referenceStats.wikiPages).toBeGreaterThan(0);
-    expect(alexWiki.body.referenceStats.tasks).toBeGreaterThan(0);
+    expect(taskRefine.body.assistantMessage).toContain("today");
+    expect(taskRefine.body.suggestions[0].title).toBe("Review client deck");
 
     await request(app.getHttpServer())
-      .get(`/me/llm-wiki/pages?ownerId=${alexOwner.id}&path=pages%2Froadmap.md`)
-      .set("Authorization", `Bearer ${managerToken}`)
-      .expect(200);
-
-    await request(app.getHttpServer())
-      .get(`/me/llm-wiki?ownerId=${TEST_USER_IDS.manager}`)
+      .post("/me/tasks/ai-refine")
       .set("Authorization", `Bearer ${alexToken}`)
+      .send({ language: "en", scope: "team", messages: [{ role: "user", content: "Team todos" }] })
       .expect(403);
 
-    const ingest = await request(app.getHttpServer())
-      .post("/me/llm-wiki/ingest")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ sourcePath: source.body.path, language: "en" })
+    const reportRefine = await request(app.getHttpServer())
+      .post("/me/reports/refine")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .send({
+        language: "en",
+        period: "daily",
+        draft: "# Draft\n\nOriginal.",
+        message: "Add a highlights section",
+      })
       .expect(201);
-    expect(ingest.body.summary).toBe("Roadmap source ingested.");
-    expect(ingest.body.writtenPages).toContain("pages/roadmap.md");
-    aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe("https://ai.example/v1/chat/completions");
-    expect(aiBody.model).toBe("test-model");
-    expect(aiBody.messages[1].content).toContain("Persistent wiki source only.");
-    expect(aiBody.messages[1].content).not.toContain("Polish LLM Wiki console states");
+    expect(reportRefine.body.revisedDraft).toContain("Daily Report");
+    expect(reportRefine.body.assistantMessage).toBeTruthy();
 
-    const page = await request(app.getHttpServer())
-      .get("/me/llm-wiki/pages?path=pages%2Froadmap.md")
-      .set("Authorization", `Bearer ${managerToken}`)
+    fetchMock.mockRestore();
+  });
+
+  it("lists report sources, generates with selection, and returns work archive", async () => {
+    const alexLogin = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "alex@mira.local", password: "password123" })
+      .expect(201);
+    const alexToken = alexLogin.body.accessToken;
+
+    const archive = await request(app.getHttpServer())
+      .get("/me/work/archive")
+      .set("Authorization", `Bearer ${alexToken}`)
       .expect(200);
-    expect(page.body.content).toContain("# Roadmap");
+    expect(Array.isArray(archive.body.weeks)).toBe(true);
+    expect(Array.isArray(archive.body.projects)).toBe(true);
 
-    fetchMock.mockResolvedValueOnce({
+    const sources = await request(app.getHttpServer())
+      .get("/me/reports/sources?period=weekly")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .expect(200);
+    expect(Array.isArray(sources.body.tasks)).toBe(true);
+    expect(sources.body.period).toBe("weekly");
+
+    process.env.MIRA_AI_PROVIDER = "openai";
+    process.env.MIRA_AI_API_KEY = "test-key";
+    process.env.MIRA_AI_BASE_URL = "https://ai.example/v1";
+    process.env.MIRA_AI_MODEL = "test-model";
+    process.env.MIRA_AI_PROXY = "off";
+
+    const taskIds = sources.body.tasks.slice(0, 1).map((t: { id: string }) => t.id);
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValueOnce({
       ok: true,
       status: 200,
       text: async () => JSON.stringify({
-        choices: [{
-          message: {
-            content: JSON.stringify({
-              answer: "The wiki says the roadmap source is persistent.",
-              usedSourceIds: [],
-            }),
-          },
-        }],
+        choices: [{ message: { content: "# Selected Report\n\nOnly chosen items." } }],
       }),
     } as Response);
 
-    const askAnswer = await request(app.getHttpServer())
-      .post("/me/ask-mira")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ question: "What does the roadmap source say?", language: "en", scope: "personal" })
+    const generated = await request(app.getHttpServer())
+      .post("/me/reports/generate")
+      .set("Authorization", `Bearer ${alexToken}`)
+      .send({
+        period: "weekly",
+        language: "en",
+        includedTaskIds: taskIds,
+        includedNoteIds: [],
+        stylePreset: "concise",
+      })
       .expect(201);
-    expect(askAnswer.body.answer).toContain("persistent");
-    expect(Array.isArray(askAnswer.body.sources)).toBe(true);
-    expect(askAnswer.body.sources.length).toBeGreaterThan(0);
-    aiBody = JSON.parse((fetchMock.mock.calls.at(-1)?.[1] as RequestInit).body as string);
-    expect(aiBody.messages[1].content).toContain("Sources:");
-    expect(aiBody.messages[1].content).toContain("Roadmap");
+    expect(generated.body.answer).toContain("Selected Report");
 
-    const editedPage = await request(app.getHttpServer())
-      .patch("/me/llm-wiki/pages")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .send({ path: "pages/roadmap.md", content: "# Roadmap Answer\n\nEdited owner page." })
-      .expect(200);
-    expect(editedPage.body.content).toContain("Edited owner page.");
-
-    await request(app.getHttpServer())
-      .delete("/me/llm-wiki/pages?path=pages%2Froadmap.md")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .expect(200);
-    await request(app.getHttpServer())
-      .get("/me/llm-wiki/pages?path=pages%2Froadmap.md")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .expect(404);
-
-    await request(app.getHttpServer())
-      .get("/me/llm-wiki/pages?path=..%2Fsecret.md")
-      .set("Authorization", `Bearer ${managerToken}`)
-      .expect(400);
-
-    await request(app.getHttpServer()).get("/me/team-view?period=monthly").set("Authorization", `Bearer ${alexToken}`).expect(403);
-    await request(app.getHttpServer()).get("/tasks").set("Authorization", `Bearer ${managerToken}`).expect(403);
+    fetchMock.mockRestore();
   });
 });

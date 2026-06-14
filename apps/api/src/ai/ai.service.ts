@@ -60,6 +60,47 @@ export type AskMiraContextResult = {
   usedSourceIds: string[];
 };
 
+export type ExtractedMission = {
+  title: string;
+  details: string;
+  completedAt: string | null;
+  weekOf: string | null;
+  confidence: number;
+};
+
+export type ReportStyleProfile = {
+  version: 1;
+  updatedAt: string;
+  sampleCount: number;
+  toneSummary: string;
+  structurePatterns: string[];
+  vocabularyHints: string[];
+  exampleExcerpt: string;
+  importedTaskCount?: number;
+  lastProcessedAt?: string;
+};
+
+export type WorkReportTaskInput = {
+  id: string;
+  title: string;
+  details: string;
+  status: string;
+  completedAt: string | null;
+  ownerName?: string;
+};
+
+export type WorkReportNoteInput = {
+  id: string;
+  title: string;
+  date: string;
+  content: string;
+};
+
+export type GenerateWorkReportResult = {
+  answer: string;
+  usedSourceIds: string[];
+};
+
 export type LlmWikiOwner = {
   id: string;
   name: string;
@@ -190,6 +231,242 @@ export class AiService {
       summary: this.optionalString(parsed.summary) || "Workspace wiki generated.",
       writtenPages,
       logEntry,
+    };
+  }
+
+  async extractMissionsFromReport(
+    configUserId: string,
+    language: LlmWikiLanguage,
+    rawText: string,
+    fallbackWeek?: string,
+  ): Promise<ExtractedMission[]> {
+    const parsed = await this.completeJson(configUserId, this.reportJsonSystem(), [
+      this.languageLine(language),
+      "Extract completed work missions from a historical weekly report.",
+      "Return JSON: {\"missions\":[{\"title\":\"string\",\"details\":\"string\",\"completedAt\":\"YYYY-MM-DD or null\",\"weekOf\":\"YYYY-MM-DD or null\",\"confidence\":0.0}]}.",
+      "Only include clearly completed work items. Use ISO dates when inferable.",
+      fallbackWeek ? `If dates are missing, prefer weekOf=${fallbackWeek}.` : "",
+      "",
+      "Report:",
+      rawText.slice(0, this.sourcePromptChars()),
+    ].filter(Boolean).join("\n"));
+
+    const missions = Array.isArray(parsed.missions) ? parsed.missions : [];
+    return missions
+      .map((item) => {
+        const row = item as Record<string, unknown>;
+        const title = this.optionalString(row.title);
+        if (!title) return null;
+        return {
+          title,
+          details: this.optionalString(row.details),
+          completedAt: this.optionalString(row.completedAt) || null,
+          weekOf: this.optionalString(row.weekOf) || fallbackWeek || null,
+          confidence: typeof row.confidence === "number" ? row.confidence : 0.5,
+        };
+      })
+      .filter((item): item is ExtractedMission => Boolean(item));
+  }
+
+  async buildReportStyleProfile(
+    configUserId: string,
+    language: LlmWikiLanguage,
+    reports: string[],
+  ): Promise<ReportStyleProfile> {
+    const combined = reports.map((text, index) => `### Sample ${index + 1}\n${text.slice(0, 12000)}`).join("\n\n");
+    const parsed = await this.completeJson(configUserId, this.reportJsonSystem(), [
+      this.languageLine(language),
+      "Analyze historical weekly reports and build a reusable writing-style profile.",
+      "Return JSON: {\"toneSummary\":\"string\",\"structurePatterns\":[\"string\"],\"vocabularyHints\":[\"string\"],\"exampleExcerpt\":\"string\"}.",
+      "Capture bullet density, section naming, tone (formal/casual), and level of detail.",
+      "",
+      combined.slice(0, this.contextChars()),
+    ].join("\n"));
+
+    return {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      sampleCount: reports.length,
+      toneSummary: this.optionalString(parsed.toneSummary) || "Professional consulting weekly report tone.",
+      structurePatterns: Array.isArray(parsed.structurePatterns)
+        ? parsed.structurePatterns.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : [],
+      vocabularyHints: Array.isArray(parsed.vocabularyHints)
+        ? parsed.vocabularyHints.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : [],
+      exampleExcerpt: this.optionalString(parsed.exampleExcerpt) || combined.slice(0, 600),
+    };
+  }
+
+  async generateWorkReport(
+    configUserId: string,
+    language: LlmWikiLanguage,
+    payload: {
+      period: "daily" | "weekly" | "monthly";
+      periodLabel: string;
+      dateRange: { start: string; end: string };
+      scope: "personal" | "team";
+      completedTasks: WorkReportTaskInput[];
+      openTasks: WorkReportTaskInput[];
+      notes: WorkReportNoteInput[];
+      styleProfile?: ReportStyleProfile | null;
+      stylePreset?: "concise" | "value" | "effort";
+    },
+  ): Promise<GenerateWorkReportResult> {
+    const taskLines = [
+      ...payload.completedTasks.map((task) =>
+        `- [${task.id}] ${task.title}${task.ownerName ? ` (${task.ownerName})` : ""}${task.completedAt ? ` | completed ${task.completedAt.slice(0, 10)}` : ""}${task.details ? `\n  ${task.details}` : ""}`,
+      ),
+      ...payload.openTasks.map((task) =>
+        `- [${task.id}] ${task.title} (in progress)${task.ownerName ? ` (${task.ownerName})` : ""}${task.details ? `\n  ${task.details}` : ""}`,
+      ),
+    ];
+    const noteLines = payload.notes.map((note) => `- [${note.id}] ${note.title} (${note.date.slice(0, 10)})\n  ${note.content.slice(0, 400)}`);
+    const styleBlock = payload.styleProfile
+      ? [
+        "Writing style profile (match this voice closely):",
+        `Tone: ${payload.styleProfile.toneSummary}`,
+        payload.styleProfile.structurePatterns.length ? `Structure: ${payload.styleProfile.structurePatterns.join("; ")}` : "",
+        payload.styleProfile.vocabularyHints.length ? `Vocabulary: ${payload.styleProfile.vocabularyHints.join("; ")}` : "",
+        payload.styleProfile.exampleExcerpt ? `Example excerpt:\n${payload.styleProfile.exampleExcerpt.slice(0, 800)}` : "",
+      ].filter(Boolean).join("\n")
+      : language === "zh"
+        ? "Use a consulting weekly report structure: 本周主要工作, 项目进展, 关键成果, 下周计划."
+        : "Use a consulting report structure: Key accomplishments, Project progress, Highlights, Next steps.";
+
+    const stylePresetBlock = payload.stylePreset === "concise"
+      ? "Write in a concise, tight style. Prefer short sentences and bullet points."
+      : payload.stylePreset === "value"
+        ? "Emphasize business value, client outcomes, and measurable impact."
+        : payload.stylePreset === "effort"
+          ? "Highlight depth of effort, challenges overcome, and work invested."
+          : "";
+
+    const prompt = [
+      this.languageLine(language),
+      `Generate a ${payload.periodLabel} work report in Markdown.`,
+      `Period: ${payload.dateRange.start.slice(0, 10)} to ${payload.dateRange.end.slice(0, 10)}`,
+      `Scope: ${payload.scope}`,
+      styleBlock,
+      stylePresetBlock,
+      "",
+      "Completed tasks:",
+      taskLines.length ? taskLines.join("\n") : "None",
+      "",
+      "In-progress tasks (optional section):",
+      payload.openTasks.length ? payload.openTasks.map((t) => `- ${t.title}`).join("\n") : "None",
+      "",
+      "Notes in period:",
+      noteLines.length ? noteLines.join("\n") : "None",
+      "",
+      "End the report with a section titled 来源 or Sources listing task/note IDs you referenced, one per line.",
+    ].join("\n");
+
+    const answer = await this.complete(configUserId, this.reportMarkdownSystem(), prompt, false);
+    const usedSourceIds = [...answer.matchAll(/\[([a-z]+_[a-f0-9]+)\]/gi)].map((match) => match[1]);
+    return {
+      answer: answer.trim(),
+      usedSourceIds: [...new Set(usedSourceIds)],
+    };
+  }
+
+  async suggestDailyTasks(
+    configUserId: string,
+    language: LlmWikiLanguage,
+    payload: {
+      scope: "personal" | "team";
+      contextSummary: string;
+      messages: Array<{ role: "user" | "assistant"; content: string }>;
+    },
+  ): Promise<{ assistantMessage: string; suggestions: Array<{ title: string; details?: string }> }> {
+    const history = payload.messages
+      .slice(-12)
+      .map((msg) => `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`)
+      .join("\n");
+    const parsed = await this.completeJson(configUserId, this.reportJsonSystem(), [
+      this.languageLine(language),
+      "Help refine today's todo list for a consultant.",
+      `Scope: ${payload.scope}`,
+      "Return JSON: {\"assistantMessage\":\"string\",\"suggestions\":[{\"title\":\"string\",\"details\":\"string or empty\"}]}.",
+      "Suggest concrete, actionable todos for today. Keep assistantMessage conversational and brief.",
+      "If the user asks to revise, update suggestions accordingly.",
+      "",
+      "Workspace context:",
+      payload.contextSummary.slice(0, 6000),
+      "",
+      "Conversation:",
+      history || "User: Generate today's todos.",
+    ].join("\n"));
+
+    const suggestions = Array.isArray(parsed.suggestions)
+      ? parsed.suggestions
+          .map((item) => {
+            const row = item as Record<string, unknown>;
+            const title = this.optionalString(row.title);
+            if (!title) return null;
+            const details = this.optionalString(row.details);
+            return details ? { title, details } : { title };
+          })
+          .filter((item): item is { title: string; details?: string } => item !== null)
+      : [];
+
+    return {
+      assistantMessage: this.optionalString(parsed.assistantMessage) || "Here are suggested todos for today.",
+      suggestions,
+    };
+  }
+
+  async refineWorkReport(
+    configUserId: string,
+    language: LlmWikiLanguage,
+    payload: {
+      period: "daily" | "weekly" | "monthly";
+      periodLabel: string;
+      draft: string;
+      message: string;
+      messages?: Array<{ role: "user" | "assistant"; content: string }>;
+      contextSummary: string;
+      styleProfile?: ReportStyleProfile | null;
+      stylePreset?: "concise" | "value" | "effort";
+    },
+  ): Promise<{ revisedDraft: string; assistantMessage: string }> {
+    const history = (payload.messages ?? [])
+      .slice(-10)
+      .map((msg) => `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`)
+      .join("\n");
+    const styleBlock = payload.styleProfile
+      ? `Writing style: ${payload.styleProfile.toneSummary}`
+      : "";
+    const presetBlock = payload.stylePreset === "concise"
+      ? "Apply a more concise tone."
+      : payload.stylePreset === "value"
+        ? "Emphasize business value and outcomes."
+        : payload.stylePreset === "effort"
+          ? "Highlight depth of effort and challenges overcome."
+          : "";
+
+    const prompt = [
+      this.languageLine(language),
+      `Revise a ${payload.periodLabel} work report draft based on the user's instruction.`,
+      styleBlock,
+      presetBlock,
+      "",
+      "Current draft:",
+      payload.draft.slice(0, 12000),
+      "",
+      history ? `Prior conversation:\n${history}\n` : "",
+      `User instruction: ${payload.message.trim()}`,
+      "",
+      "Workspace context (for accuracy):",
+      payload.contextSummary.slice(0, 4000),
+      "",
+      "Return the full revised report in Markdown. Preserve structure unless the user asks otherwise.",
+    ].filter(Boolean).join("\n");
+
+    const revisedDraft = await this.complete(configUserId, this.reportMarkdownSystem(), prompt, false);
+    return {
+      revisedDraft: revisedDraft.trim(),
+      assistantMessage: language === "zh" ? "已根据您的要求更新报告草稿。" : "I've updated the report draft based on your request.",
     };
   }
 
@@ -759,6 +1036,22 @@ export class AiService {
       "Never include markdown fences or prose outside JSON.",
       "Do not expose hidden reasoning or chain-of-thought.",
       "Prefer concise markdown, useful [[links]], and explicit source references.",
+    ].join(" ");
+  }
+
+  private reportJsonSystem() {
+    return [
+      "You analyze consulting weekly reports for Mira.",
+      "Return only valid JSON in the requested schema.",
+      "Never include markdown fences or prose outside JSON.",
+    ].join(" ");
+  }
+
+  private reportMarkdownSystem() {
+    return [
+      "You write consulting work reports for Mira users.",
+      "Return polished Markdown only. No JSON fences.",
+      "Match the user's historical tone when a style profile is provided.",
     ].join(" ");
   }
 }

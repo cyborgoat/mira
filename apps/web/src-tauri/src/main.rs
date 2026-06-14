@@ -102,9 +102,18 @@ pub fn run() {
 }
 
 fn mira_data_dir(app: &tauri::App) -> PathBuf {
-  if let Some(path) = find_repo_workspace() {
-    return path;
+  // In a production .app bundle the executable lives inside *.app/Contents/MacOS.
+  // Only attempt repo-workspace discovery in dev mode (no .app bundle in the path).
+  let in_app_bundle = std::env::current_exe()
+    .map(|p| p.to_string_lossy().contains(".app/Contents"))
+    .unwrap_or(false);
+
+  if !in_app_bundle {
+    if let Some(path) = find_repo_workspace() {
+      return path;
+    }
   }
+
   app.path()
     .app_data_dir()
     .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))

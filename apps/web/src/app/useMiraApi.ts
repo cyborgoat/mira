@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { MeetingNote, Period, Task, TaskPriority, TaskStatus, TeamNode, User, WorkView, LlmWikiOverview, LlmWikiOwner, LlmWikiPeriod, LlmWikiScope, LlmWikiReferenceStats, LlmWikiIngestResult, LlmWikiLintResult, LlmWikiPageContent, LlmWikiSource, LlmWikiPage, AskMiraResult, ViewMode, WorkspaceExport, LlmConfig, UpdateLlmConfigPayload } from "./types";
+import type { MeetingNote, Period, Task, TaskPriority, TaskStatus, TeamNode, User, WorkView, WorkspaceExport, LlmConfig, UpdateLlmConfigPayload, ReportProfile, ReportGenerateResult, ReportColdStartResult, TaskRefineMessage, TaskRefineResult, ReportRefineMessage, ReportRefineResult, ReportSources, ReportStylePreset, WorkArchive } from "./types";
 import i18n from "@/i18n";
 import { errorMessage, parseWorkspaceExport, sortNodesForDelete, sortNodesForImport, downloadJson } from "./helpers";
 
@@ -24,21 +24,29 @@ export type MiraApi = {
     id: string,
     payload: { title?: string; details?: string; status?: TaskStatus; priority?: TaskPriority; dueDate?: string | null },
   ) => Promise<void>;
-  deleteTask: (id: string) => Promise<void>;
-  createNote: (payload: { title: string; date: string; content: string; tags: string }) => Promise<MeetingNote>;
-  updateNote: (id: string, payload: { title?: string; date?: string; content?: string; tags?: string }) => Promise<void>;
-  deleteNote: (id: string) => Promise<void>;
-  loadLlmWiki: (payload?: { ownerId?: string; view?: ViewMode; scope?: LlmWikiScope }) => Promise<LlmWikiOverview>;
-  loadLlmWikiOwners: () => Promise<LlmWikiOwner[]>;
-  loadLlmWikiReferenceStats: (payload: { period: LlmWikiPeriod; scope: LlmWikiScope; ownerId?: string }) => Promise<LlmWikiReferenceStats>;
-  generateLlmWiki: (payload: { period: LlmWikiPeriod; scope: LlmWikiScope; language: "en" | "zh" }) => Promise<LlmWikiIngestResult>;
-  uploadLlmWikiSource: (payload: { filename: string; content: string; view?: ViewMode }) => Promise<LlmWikiSource>;
-  ingestLlmWikiSource: (payload: { sourcePath: string; language: "en" | "zh"; view?: ViewMode }) => Promise<LlmWikiIngestResult>;
-  askMira: (payload: { question: string; language: "en" | "zh"; scope: "personal" | "team"; ownerId?: string }) => Promise<AskMiraResult>;
-  lintLlmWiki: (payload: { language: "en" | "zh"; view?: ViewMode }) => Promise<LlmWikiLintResult>;
-  readLlmWikiPage: (path: string, payload?: { ownerId?: string; view?: ViewMode; scope?: LlmWikiScope }) => Promise<LlmWikiPageContent>;
-  updateLlmWikiPage: (payload: { path: string; content: string; view?: ViewMode }) => Promise<LlmWikiPageContent>;
-  deleteLlmWikiPage: (path: string, view?: ViewMode) => Promise<{ path: string; deleted: boolean }>;
+  loadReportProfile: () => Promise<ReportProfile>;
+  loadReportSources: (payload: { period: Period; scope?: "personal" | "team" }) => Promise<ReportSources>;
+  generateReport: (payload: {
+    period: Period;
+    scope?: "personal" | "team";
+    language: "en" | "zh";
+    includedTaskIds?: string[];
+    includedNoteIds?: string[];
+    stylePreset?: ReportStylePreset;
+  }) => Promise<ReportGenerateResult>;
+  loadWorkArchive: () => Promise<WorkArchive>;
+  uploadReportHistory: (files: Array<{ filename: string; content: string }>) => Promise<{ saved: string[]; count: number }>;
+  processReportColdStart: (language: "en" | "zh") => Promise<ReportColdStartResult>;
+  refineTasks: (payload: { language: "en" | "zh"; scope?: "personal" | "team"; messages: TaskRefineMessage[] }) => Promise<TaskRefineResult>;
+  refineReport: (payload: {
+    language: "en" | "zh";
+    period: Period;
+    scope?: "personal" | "team";
+    draft: string;
+    message: string;
+    messages?: ReportRefineMessage[];
+    stylePreset?: ReportStylePreset;
+  }) => Promise<ReportRefineResult>;
   createTeamNode: (payload: { name: string; title?: string; parentId?: string }) => Promise<void>;
   updateTeamNode: (id: string, payload: { name?: string; title?: string | null; parentId?: string | null }) => Promise<void>;
   deleteTeamNode: (id: string) => Promise<void>;
@@ -101,12 +109,20 @@ export function useMiraApi(): MiraApi {
     setLoading(true);
     try {
       setError("");
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      if (!response.ok) throw new Error(i18n.t("login.error"));
+      let response: Response;
+      try {
+        response = await fetch(`${API_URL}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+      } catch {
+        throw new Error("无法连接本地服务，请重启 Mira 应用后重试");
+      }
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(typeof body.message === "string" ? body.message : i18n.t("login.error"));
+      }
       const data = (await response.json()) as { accessToken: string; user: User };
       localStorage.setItem(TOKEN_KEY, data.accessToken);
       setToken(data.accessToken);
@@ -219,48 +235,18 @@ export function useMiraApi(): MiraApi {
     updatePassword: (payload) => mutate(() => request("/me/password", { method: "PATCH", body: JSON.stringify(payload) })),
     createTask: (payload) => mutate(() => request("/me/tasks", { method: "POST", body: JSON.stringify(payload) })),
     updateTask: (id, payload) => mutate(() => request(`/me/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
-    deleteTask: (id) => mutate(() => request(`/me/tasks/${id}`, { method: "DELETE" })),
-    createNote: async (payload) => {
-      let created: MeetingNote | null = null;
-      await mutate(async () => {
-        created = await request<MeetingNote>("/me/notes", { method: "POST", body: JSON.stringify(payload) });
-      });
-      return created!;
+    loadReportProfile: () => request<ReportProfile>("/me/reports/profile"),
+    loadReportSources: (payload) => {
+      const params = new URLSearchParams({ period: payload.period });
+      if (payload.scope) params.set("scope", payload.scope);
+      return request<ReportSources>(`/me/reports/sources?${params.toString()}`);
     },
-    updateNote: (id, payload) => mutate(() => request(`/me/notes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
-    deleteNote: (id) => mutate(() => request(`/me/notes/${id}`, { method: "DELETE" })),
-    loadLlmWiki: (payload) => {
-      const params = new URLSearchParams();
-      if (payload?.ownerId) params.set("ownerId", payload.ownerId);
-      if (payload?.view) params.set("view", payload.view);
-      if (payload?.scope) params.set("scope", payload.scope);
-      const query = params.toString();
-      return request<LlmWikiOverview>(`/me/llm-wiki${query ? `?${query}` : ""}`);
-    },
-    loadLlmWikiOwners: () => request<LlmWikiOwner[]>("/me/llm-wiki/owners"),
-    loadLlmWikiReferenceStats: (payload) => {
-      const params = new URLSearchParams({ period: payload.period, scope: payload.scope });
-      if (payload.ownerId) params.set("ownerId", payload.ownerId);
-      return request<LlmWikiReferenceStats>(`/me/llm-wiki/reference-stats?${params.toString()}`);
-    },
-    generateLlmWiki: (payload) => request<LlmWikiIngestResult>("/me/llm-wiki/generate", { method: "POST", body: JSON.stringify(payload) }),
-    uploadLlmWikiSource: (payload) => request<LlmWikiSource>("/me/llm-wiki/sources", { method: "POST", body: JSON.stringify(payload) }),
-    ingestLlmWikiSource: (payload) => request<LlmWikiIngestResult>("/me/llm-wiki/ingest", { method: "POST", body: JSON.stringify(payload) }),
-    askMira: (payload) => request<AskMiraResult>("/me/ask-mira", { method: "POST", body: JSON.stringify(payload) }),
-    lintLlmWiki: (payload) => request<LlmWikiLintResult>("/me/llm-wiki/lint", { method: "POST", body: JSON.stringify(payload) }),
-    readLlmWikiPage: (path, payload) => {
-      const params = new URLSearchParams({ path });
-      if (payload?.ownerId) params.set("ownerId", payload.ownerId);
-      if (payload?.view) params.set("view", payload.view);
-      if (payload?.scope) params.set("scope", payload.scope);
-      return request<LlmWikiPageContent>(`/me/llm-wiki/pages?${params.toString()}`);
-    },
-    updateLlmWikiPage: (payload) => request<LlmWikiPageContent>("/me/llm-wiki/pages", { method: "PATCH", body: JSON.stringify(payload) }),
-    deleteLlmWikiPage: (path, view) => {
-      const params = new URLSearchParams({ path });
-      if (view) params.set("view", view);
-      return request<{ path: string; deleted: boolean }>(`/me/llm-wiki/pages?${params.toString()}`, { method: "DELETE" });
-    },
+    generateReport: (payload) => request<ReportGenerateResult>("/me/reports/generate", { method: "POST", body: JSON.stringify(payload) }),
+    loadWorkArchive: () => request<WorkArchive>("/me/work/archive"),
+    uploadReportHistory: (files) => request<{ saved: string[]; count: number }>("/me/reports/cold-start/upload", { method: "POST", body: JSON.stringify({ files }) }),
+    processReportColdStart: (language) => request<ReportColdStartResult>("/me/reports/cold-start/process", { method: "POST", body: JSON.stringify({ language }) }),
+    refineTasks: (payload) => request<TaskRefineResult>("/me/tasks/ai-refine", { method: "POST", body: JSON.stringify(payload) }),
+    refineReport: (payload) => request<ReportRefineResult>("/me/reports/refine", { method: "POST", body: JSON.stringify(payload) }),
     createTeamNode: (payload) => mutate(() => request("/team/nodes", { method: "POST", body: JSON.stringify(payload) })),
     updateTeamNode: (id, payload) => mutate(() => request(`/team/nodes/${id}`, { method: "PATCH", body: JSON.stringify(payload) })),
     deleteTeamNode: (id) => mutate(() => request(`/team/nodes/${id}`, { method: "DELETE" })),

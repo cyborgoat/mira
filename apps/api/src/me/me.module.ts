@@ -5,10 +5,11 @@ import { UsersModule } from "../users/users.module";
 import { WorkspaceContentModule } from "../workspace-content/workspace-content.module";
 import { MeController } from "./me.controller";
 import { MeService } from "./me.service";
+import { ReportService } from "./report.service";
 
 @Module({
   imports: [AuthModule, UsersModule, AiModule, WorkspaceContentModule],
   controllers: [MeController],
-  providers: [MeService],
+  providers: [MeService, ReportService],
 })
 export class MeModule {}

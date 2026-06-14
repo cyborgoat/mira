@@ -7,8 +7,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { LlmConfig, LlmProvider, SettingsTab, TeamNode, UpdateLlmConfigPayload, User, WorkView } from "../types";
-import { InlineStats, LanguageSelect } from "../shared";
-import { buildStats, nodePath } from "../helpers";
+import { InlineStats, LanguageSelect, confirmAction } from "../shared";
+import { buildStats, buildTreeRows, nodePath } from "../helpers";
 
 type SettingsViewProps = {
   user: User;
@@ -468,21 +468,3 @@ function LlmSettingsPanel({ onLoad, onSubmit }: { onLoad: () => Promise<LlmConfi
   );
 }
 
-function buildTreeRows(nodes: TeamNode[]) {
-  const byParent = new Map<string, TeamNode[]>();
-  for (const node of nodes) byParent.set(node.parentId ?? "root", [...(byParent.get(node.parentId ?? "root") ?? []), node]);
-  for (const siblings of byParent.values()) siblings.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
-  const rows: Array<{ node: TeamNode; depth: number }> = [];
-  const visit = (parentId: string, depth: number) => {
-    for (const node of byParent.get(parentId) ?? []) {
-      rows.push({ node, depth });
-      visit(node.id, depth + 1);
-    }
-  };
-  visit("root", 0);
-  return rows;
-}
-
-function confirmAction(message: string, action: () => void | Promise<void>) {
-  if (window.confirm(message)) void action();
-}

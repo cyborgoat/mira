@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "local.mira.desktop",
   "build": {
-    "beforeDevCommand": "npm run build:api-sidecar:host && npm run dev",
+    "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build:api-sidecar:host && npm run build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
@@ -26,7 +26,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "externalBin": [
       "binaries/mira-api"
     ]

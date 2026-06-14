@@ -1,22 +1,23 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { LlmConfigService } from "../ai/llm-config.service";
 import { CurrentUser, AuthUser } from "../auth/current-user";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Period } from "../common/period";
 import { TaskPriority, TaskStatus } from "../common/workspace-types";
-import { CreateNoteDto, UpdateNoteDto } from "../notes/dto/note.dto";
 import { CreateTaskDto, UpdateTaskDto } from "../tasks/dto/task.dto";
-import { AskMiraDto } from "./dto/ask-mira.dto";
 import { UpdatePasswordDto, UpdateProfileDto } from "./dto/account.dto";
 import { UpdateLlmConfigDto } from "./dto/llm-config.dto";
-import { GenerateLlmWikiDto, IngestLlmWikiSourceDto, LintLlmWikiDto, LlmWikiScope, LlmWikiViewMode, UpdateLlmWikiPageDto, UploadLlmWikiSourceDto } from "./dto/llm-wiki.dto";
+import { GenerateReportDto, ProcessReportColdStartDto, RefineReportDto, UploadReportHistoryDto } from "./dto/report.dto";
+import { TaskAiRefineDto } from "./dto/task-refine.dto";
 import { MeService } from "./me.service";
+import { ReportService } from "./report.service";
 
 @UseGuards(JwtAuthGuard)
 @Controller("me")
 export class MeController {
   constructor(
     private readonly me: MeService,
+    private readonly reports: ReportService,
     private readonly llmConfig: LlmConfigService,
   ) {}
 
@@ -29,6 +30,11 @@ export class MeController {
     @Query("priority") priority?: TaskPriority,
   ) {
     return this.me.personalWork(user, { period, query, status, priority });
+  }
+
+  @Get("work/archive")
+  workArchive(@CurrentUser() user: AuthUser) {
+    return this.me.workArchive(user);
   }
 
   @Get("team-view")
@@ -56,75 +62,43 @@ export class MeController {
     return this.llmConfig.update(user.id, payload);
   }
 
-  @Get("llm-wiki")
-  llmWikiOverview(
+  @Post("tasks/ai-refine")
+  refineTasks(@CurrentUser() user: AuthUser, @Body() payload: TaskAiRefineDto) {
+    return this.me.refineTasks(user, payload);
+  }
+
+  @Get("reports/profile")
+  reportProfile(@CurrentUser() user: AuthUser) {
+    return this.reports.profile(user);
+  }
+
+  @Get("reports/sources")
+  reportSources(
     @CurrentUser() user: AuthUser,
-    @Query("ownerId") ownerId?: string,
-    @Query("view") view?: LlmWikiViewMode,
-    @Query("scope") scope: LlmWikiScope = "personal",
+    @Query("period") period: Period = "weekly",
+    @Query("scope") scope?: "personal" | "team",
   ) {
-    return this.me.llmWikiOverview(user, { ownerId, view: view || (ownerId ? "team" : "personal"), scope });
+    return this.reports.listSources(user, period, scope);
   }
 
-  @Get("llm-wiki/owners")
-  llmWikiOwners(@CurrentUser() user: AuthUser) {
-    return this.me.llmWikiOwners(user);
+  @Post("reports/generate")
+  generateReport(@CurrentUser() user: AuthUser, @Body() payload: GenerateReportDto) {
+    return this.reports.generateReport(user, payload);
   }
 
-  @Get("llm-wiki/reference-stats")
-  llmWikiReferenceStats(
-    @CurrentUser() user: AuthUser,
-    @Query("period") period: GenerateLlmWikiDto["period"] = "weekly",
-    @Query("scope") scope: NonNullable<GenerateLlmWikiDto["scope"]> = "personal",
-    @Query("ownerId") ownerId?: string,
-  ) {
-    return this.me.llmWikiReferenceStats(user, period, scope, ownerId);
+  @Post("reports/refine")
+  refineReport(@CurrentUser() user: AuthUser, @Body() payload: RefineReportDto) {
+    return this.reports.refineReport(user, payload);
   }
 
-  @Post("llm-wiki/sources")
-  uploadLlmWikiSource(@CurrentUser() user: AuthUser, @Body() payload: UploadLlmWikiSourceDto) {
-    return this.me.uploadLlmWikiSource(user, payload);
+  @Post("reports/cold-start/upload")
+  uploadReportHistory(@CurrentUser() user: AuthUser, @Body() payload: UploadReportHistoryDto) {
+    return this.reports.uploadHistory(user, payload);
   }
 
-  @Post("llm-wiki/ingest")
-  ingestLlmWikiSource(@CurrentUser() user: AuthUser, @Body() payload: IngestLlmWikiSourceDto) {
-    return this.me.ingestLlmWikiSource(user, payload);
-  }
-
-  @Post("llm-wiki/generate")
-  generateLlmWiki(@CurrentUser() user: AuthUser, @Body() payload: GenerateLlmWikiDto) {
-    return this.me.generateLlmWiki(user, payload);
-  }
-
-  @Post("llm-wiki/lint")
-  lintLlmWiki(@CurrentUser() user: AuthUser, @Body() payload: LintLlmWikiDto) {
-    return this.me.lintLlmWiki(user, payload);
-  }
-
-  @Post("ask-mira")
-  askMira(@CurrentUser() user: AuthUser, @Body() payload: AskMiraDto) {
-    return this.me.askMira(user, payload);
-  }
-
-  @Get("llm-wiki/pages")
-  readLlmWikiPage(
-    @CurrentUser() user: AuthUser,
-    @Query("path") path: string,
-    @Query("ownerId") ownerId?: string,
-    @Query("view") view?: LlmWikiViewMode,
-    @Query("scope") scope: LlmWikiScope = "personal",
-  ) {
-    return this.me.readLlmWikiPage(user, path, { ownerId, view: view || (ownerId ? "team" : "personal"), scope });
-  }
-
-  @Patch("llm-wiki/pages")
-  updateLlmWikiPage(@CurrentUser() user: AuthUser, @Body() payload: UpdateLlmWikiPageDto) {
-    return this.me.updateLlmWikiPage(user, payload);
-  }
-
-  @Delete("llm-wiki/pages")
-  deleteLlmWikiPage(@CurrentUser() user: AuthUser, @Query("path") path: string, @Query("view") view: LlmWikiViewMode = "personal") {
-    return this.me.deleteLlmWikiPage(user, path, view);
+  @Post("reports/cold-start/process")
+  processReportColdStart(@CurrentUser() user: AuthUser, @Body() payload: ProcessReportColdStartDto) {
+    return this.reports.processColdStart(user, payload.language);
   }
 
   @Post("tasks")
@@ -135,25 +109,5 @@ export class MeController {
   @Patch("tasks/:id")
   updateTask(@CurrentUser() user: AuthUser, @Param("id") id: string, @Body() payload: UpdateTaskDto) {
     return this.me.updateTask(user, id, payload);
-  }
-
-  @Delete("tasks/:id")
-  deleteTask(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.me.deleteTask(user, id);
-  }
-
-  @Post("notes")
-  createNote(@CurrentUser() user: AuthUser, @Body() payload: Omit<CreateNoteDto, "ownerNodeId">) {
-    return this.me.createNote(user, payload);
-  }
-
-  @Patch("notes/:id")
-  updateNote(@CurrentUser() user: AuthUser, @Param("id") id: string, @Body() payload: UpdateNoteDto) {
-    return this.me.updateNote(user, id, payload);
-  }
-
-  @Delete("notes/:id")
-  deleteNote(@CurrentUser() user: AuthUser, @Param("id") id: string) {
-    return this.me.deleteNote(user, id);
   }
 }
