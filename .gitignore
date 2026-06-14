@@ -148,6 +148,26 @@ __pycache__/
 .ruff_cache/
 .venv/
 
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows metadata
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor swap / backup files
+*.swp
+*~
+
+# Local debug and automation scratch
+.playwright-mcp/
+apps/api/tmp-debug/
+apps/api/tmp-debug*/
+
 # Mira local-first runtime scratch files
 apps/api/tmp/
 apps/api/prisma/tmp/

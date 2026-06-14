@@ -1,0 +1,20 @@
+{
+  "name": "mira",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "install": "npm --prefix apps/api install && npm --prefix apps/web install && cargo fetch --manifest-path apps/web/src-tauri/Cargo.toml",
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "dev:api": "npm --prefix apps/api run dev",
+    "start:api": "npm --prefix apps/api run start",
+    "build:api": "npm --prefix apps/api run build",
+    "test:api": "npm --prefix apps/api run test",
+    "db:api": "npm --prefix apps/api run prisma:push",
+    "dev:desktop": "npm --prefix apps/web run dev:tauri",
+    "build:desktop": "npm --prefix apps/web run build:api-sidecar:host && npm --prefix apps/web run build:tauri",
+    "build:desktop:mac": "npm --prefix apps/web run build:api-sidecar:host && npm --prefix apps/web run build:tauri",
+    "build:desktop:windows": "npm --prefix apps/web run build:api-sidecar:all && npm --prefix apps/web run build:tauri -- --target x86_64-pc-windows-msvc",
+    "build:desktop:linux": "npm --prefix apps/web run build:api-sidecar:all && npm --prefix apps/web run build:tauri -- --target x86_64-unknown-linux-gnu"
+  }
+}

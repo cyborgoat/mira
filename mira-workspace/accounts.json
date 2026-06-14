@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "accounts": [
+    {
+      "id": "0fa48143-b9dd-4b8d-843f-0b08feee4689",
+      "name": "默认账号",
+      "password_hash": "",
+      "role": "manager",
+      "created_at": "2026-05-26T08:39:28.034490+00:00",
+      "fail_count": 0,
+      "locked_at": null,
+      "deleted_at": null
+    },
+    {
+      "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "name": "团队成员",
+      "password_hash": "",
+      "role": "member",
+      "created_at": "2026-05-27T00:00:00.000000+00:00",
+      "fail_count": 0,
+      "locked_at": null,
+      "deleted_at": null
+    }
+  ]
+}

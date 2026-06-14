@@ -1,9 +1,9 @@
-# manager
+# 咨询项目组
 
 User id: `093c046d-0133-40ef-8eda-ab3b52479161`
 Email: `manager@mira.local`
-Role: Engineering Lead
+Role: 团队负责人
 Team node id: `node_manager`
-Team title: Engineering Manager
+Team title: 团队负责人
 
-This folder owns manager's tasks and notes.
+This folder owns 咨询项目组's tasks and notes.
