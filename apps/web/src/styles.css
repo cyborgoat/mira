@@ -1107,6 +1107,46 @@ label strong {
   gap: 10px;
 }
 
+.cold-start-file-label {
+  cursor: pointer;
+  display: inline-flex;
+}
+
+.cold-start-file-input {
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.cold-start-file-button {
+  align-items: center;
+  background: var(--mira-surface);
+  border: 1px solid var(--mira-border);
+  border-radius: 8px;
+  color: var(--mira-text);
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 500;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.cold-start-file-label:hover .cold-start-file-button {
+  background: var(--surface-elevated);
+}
+
+.cold-start-selected-count {
+  margin: 0;
+}
+
 .cold-start-file-list {
   display: flex;
   flex-direction: column;

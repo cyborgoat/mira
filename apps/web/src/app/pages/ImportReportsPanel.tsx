@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useId, useState } from "react";
 import { CheckCircle2, FileText, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +15,11 @@ type ImportReportsPanelProps = {
   onImportComplete?: () => void;
 };
 
+function isAcceptedReportFile(name: string) {
+  const lower = name.toLowerCase();
+  return ACCEPTED_REPORT_TYPES.some((ext) => lower.endsWith(ext));
+}
+
 export function ImportReportsPanel({
   onLoadReportProfile,
   onUploadReportHistory,
@@ -24,13 +29,13 @@ export function ImportReportsPanel({
 }: ImportReportsPanelProps) {
   const { t, i18n: i18nInstance } = useTranslation();
   const language = i18nInstance.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
+  const fileInputId = useId();
   const [profile, setProfile] = useState<ReportProfile | null>(null);
   const [pendingFiles, setPendingFiles] = useState<Array<{ filename: string; content: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [error, setError] = useState("");
   const [result, setResult] = useState<ReportColdStartResult | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshProfile = async () => {
     setLoadingProfile(true);
@@ -48,18 +53,43 @@ export function ImportReportsPanel({
   }, [onLoadReportProfile]);
 
   const handleFilePick = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files?.length) return;
-    const next: Array<{ filename: string; content: string }> = [];
-    for (const file of Array.from(files)) {
-      const lower = file.name.toLowerCase();
-      if (!ACCEPTED_REPORT_TYPES.some((ext) => lower.endsWith(ext))) continue;
-      next.push({ filename: file.name, content: await file.text() });
-    }
-    setPendingFiles(next);
-    setResult(null);
-    setError("");
+    const picked = event.target.files;
     event.target.value = "";
+    if (!picked?.length) return;
+
+    setError("");
+    setResult(null);
+
+    const next = [...pendingFiles];
+    let skipped = 0;
+
+    for (const file of Array.from(picked)) {
+      if (!isAcceptedReportFile(file.name)) {
+        skipped += 1;
+        continue;
+      }
+      try {
+        const content = await file.text();
+        const existingIndex = next.findIndex((entry) => entry.filename === file.name);
+        const entry = { filename: file.name, content };
+        if (existingIndex >= 0) next[existingIndex] = entry;
+        else next.push(entry);
+      } catch {
+        setError(t("tasks.importReports.fileReadError", { name: file.name }));
+        return;
+      }
+    }
+
+    if (!next.length && skipped > 0) {
+      setError(t("tasks.importReports.unsupportedFiles", { count: skipped }));
+      return;
+    }
+
+    if (skipped > 0 && next.length) {
+      setError(t("tasks.importReports.unsupportedFiles", { count: skipped }));
+    }
+
+    setPendingFiles(next);
   };
 
   const processColdStart = async () => {
@@ -117,32 +147,39 @@ export function ImportReportsPanel({
 
       {profile?.toneSummary ? <p className="cold-start-tone">{profile.toneSummary}</p> : null}
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".md,.markdown,.txt"
-        multiple
-        hidden
-        onChange={(event) => void handleFilePick(event)}
-      />
       <div className="row cold-start-actions">
-        <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
-          <Upload size={15} /> {t("tasks.importReports.chooseFiles")}
-        </Button>
+        <label htmlFor={fileInputId} className="cold-start-file-label">
+          <input
+            id={fileInputId}
+            className="cold-start-file-input"
+            type="file"
+            accept=".md,.markdown,.txt,text/markdown,text/plain"
+            multiple
+            onChange={(event) => void handleFilePick(event)}
+          />
+          <span className="cold-start-file-button">
+            <Upload size={15} /> {t("tasks.importReports.chooseFiles")}
+          </span>
+        </label>
         <Button type="button" disabled={!pendingFiles.length || busy} onClick={() => void processColdStart()}>
           {busy ? t("tasks.importReports.processing") : t("tasks.importReports.analyze")}
         </Button>
       </div>
 
       {pendingFiles.length ? (
-        <ul className="cold-start-file-list">
-          {pendingFiles.map((file) => (
-            <li key={file.filename}>
-              <FileText size={15} />
-              <span>{file.filename}</span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="muted cold-start-selected-count">
+            {t("tasks.importReports.selectedCount", { count: pendingFiles.length })}
+          </p>
+          <ul className="cold-start-file-list">
+            {pendingFiles.map((file) => (
+              <li key={file.filename}>
+                <FileText size={15} />
+                <span>{file.filename}</span>
+              </li>
+            ))}
+          </ul>
+        </>
       ) : (
         <p className="muted cold-start-hint">{t("tasks.importReports.fileHint")}</p>
       )}
